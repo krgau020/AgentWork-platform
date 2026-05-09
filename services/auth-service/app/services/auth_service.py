@@ -42,10 +42,18 @@ def login_user(db: Session, email: str, password: str):
     return access_token, refresh_token
 
 
-def refresh_access_token(db: Session, refresh_token: str):
+
+
+from app.core.security import decode_token
+
+def refresh_access_token(db, refresh_token: str):
     token_entry = db.query(Token).filter(Token.refresh_token == refresh_token).first()
 
     if not token_entry:
         raise ValueError("Invalid refresh token")
 
-    return create_access_token({"sub": "user"})  # simplify for now
+    payload = decode_token(refresh_token)
+
+    return create_access_token({
+        "sub": payload["sub"]
+    })
