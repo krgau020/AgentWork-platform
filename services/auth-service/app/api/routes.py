@@ -5,7 +5,7 @@ Defines API endpoints for authentication.
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
-from app.schemas.user import UserCreate, UserLogin, TokenResponse
+from app.schemas.user import UserCreate, UserLogin, TokenResponse, RefreshTokenRequest
 from app.services.auth_service import create_user, login_user, refresh_access_token
 
 router = APIRouter()
@@ -38,9 +38,9 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh")
-def refresh(token: str, db: Session = Depends(get_db)):
+def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
     try:
-        new_token = refresh_access_token(db, token)
+        new_token = refresh_access_token(db, request.refresh_token)
         return {"access_token": new_token}
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid token")
