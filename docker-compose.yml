@@ -1,8 +1,69 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  # Services will be defined here
 
-networks:
-  finsight-network:
-    driver: bridge
+  postgres:
+    image: postgres:15
+    container_name: finsight_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: finsight
+      TZ: Asia/Kolkata
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: finsight_redis
+    ports:
+      - "6379:6379"
+
+  gateway:
+    build: ./services/gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth-service
+
+  auth-service:
+    build: ./services/auth-service
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=finsight
+      - SECRET_KEY=supersecret
+      - ACCESS_TOKEN_EXPIRE_MINUTES=120
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+    depends_on:
+      - postgres
+    ports:
+      - "8001:8001"
+
+  document-service:
+    build: ./services/document-service
+    ports:
+      - "8002:8002"
+
+  user-service:
+    build: ./services/user-service
+    ports:
+      - "8003:8003"
+
+  ai-service:
+    build: ./services/ai-service
+    ports:
+      - "8004:8004"
+
+  validation-service:
+    build: ./services/validation-service
+    ports:
+      - "8005:8005"
+
+volumes:
+  pgdata:
