@@ -10,7 +10,8 @@ from app.core.security import (
     hash_password,
     verify_password,
     create_access_token,
-    create_refresh_token
+    create_refresh_token,
+    decode_token
 )
 
 
@@ -48,4 +49,11 @@ def refresh_access_token(db: Session, refresh_token: str):
     if not token_entry:
         raise ValueError("Invalid refresh token")
 
-    return create_access_token({"sub": "user"})  # simplify for now
+    payload = decode_token(refresh_token)
+    email = payload.get("sub")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise ValueError("User not found")
+
+    return create_access_token({"sub": user.email, "role": user.role})

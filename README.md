@@ -41,3 +41,43 @@ See documentation for setup and deployment instructions.
 | Redis | 6379 | ✅ Running | Cache/Session storage |
 
 **Note:** PostgreSQL and Redis are NOT HTTP endpoints. Do NOT test them with Bruno. Microservices use them internally.
+
+
+
+
+
+
+## Docker command
+
+# Build all services
+docker compose build
+
+# Run all services
+docker compose up
+
+# Run all services in background
+docker compose up -d
+
+# Build one service
+docker compose build auth-service
+
+# Run one service
+docker compose up auth-service
+
+# Rebuild and run one service
+docker compose up --build auth-service
+
+# View logs for one service
+docker compose logs -f auth-service
+
+# Stop all services
+docker compose down
+
+# Stop and remove volumes
+docker compose down -v
+
+# Open terminal inside container
+docker exec -it auth-service bash
+
+# If bash does not work
+docker exec -it auth-service sh
