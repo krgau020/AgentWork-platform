@@ -1,5 +1,31 @@
 """
-Handles password hashing and JWT token creation/validation.
+Auth Service — Security Utilities (app/core/security.py)
+
+Purpose:
+    All cryptographic operations for the auth service live here.
+    Covers password hashing, password policy validation, and JWT operations.
+
+Password hashing:
+    Uses Argon2 as the primary algorithm (winner of Password Hashing Competition).
+    bcrypt is kept as a fallback to verify old hashes during migration.
+    passlib's CryptContext handles algorithm selection automatically.
+    Hashing is one-way — stored hashes cannot be reversed to get the original password.
+
+Password policy (validate_password_policy):
+    Enforced at signup. Raises ValueError if any rule is violated.
+    Rules: min 8 chars, max 256 chars, at least one uppercase, lowercase, digit,
+    and special character. ValueError is caught in routes.py and returned as HTTP 400.
+
+JWT functions:
+    create_access_token  — signs payload {sub, role, exp} with SECRET_KEY using HS256.
+                           exp = now + ACCESS_TOKEN_EXPIRE_MINUTES.
+    create_refresh_token — signs payload {sub, exp} only (no role).
+                           exp = now + REFRESH_TOKEN_EXPIRE_DAYS.
+    decode_token         — decodes and verifies a JWT. Raises JWTError if invalid.
+
+Algorithm:
+    HS256 = HMAC + SHA-256. Symmetric — same SECRET_KEY signs and verifies.
+    Only this service and the gateway need the key.
 """
 
 from passlib.context import CryptContext

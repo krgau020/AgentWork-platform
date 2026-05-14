@@ -1,14 +1,11 @@
-# App Structure
+# app/
 
-Main application code directory.
+Main application code for the gateway service.
+
+See the full documentation in [`../../README.md`](../../README.md).
 
 ## Subdirectories
 
-- **api/** - API routes and endpoint handlers
-- **core/** - Core business logic, configuration, utilities
-- **models/** - Database models and Pydantic schemas
-- **services/** - Service layer with business logic
-
-## Entry Point
-
-`main.py` - FastAPI application initialization and startup
+- `api/` — Route handlers. All endpoints and proxy forwarding logic.
+- `core/` — Configuration, JWT validation, and request middleware.
+- `main.py` — FastAPI app bootstrap. Start here.

@@ -1,5 +1,25 @@
 """
-Defines API endpoints for authentication.
+Auth Service — API Route Handlers (app/api/routes.py)
+
+Purpose:
+    Defines all HTTP endpoints for authentication. Each route validates the
+    incoming request, calls the appropriate business logic from auth_service.py,
+    and handles errors with proper HTTP status codes.
+
+Routes:
+    POST /auth/signup   → creates a new user account.
+                          Raises 400 if email already exists or password is too weak.
+    POST /auth/login    → verifies credentials, returns access + refresh tokens.
+                          Raises 401 if credentials are wrong.
+    POST /auth/refresh  → validates refresh_token, returns a new access_token.
+                          Raises 401 if refresh token is invalid or revoked.
+
+Design notes:
+    - get_db() is a FastAPI dependency that provides a DB session per request
+      and guarantees the session is closed after the request, even on errors.
+    - Business logic lives in app/services/auth_service.py, not here.
+      Routes only handle HTTP concerns (request parsing, error mapping).
+    - ValueError from service layer maps to HTTP 400 or 401 as appropriate.
 """
 
 from fastapi import APIRouter, Depends, HTTPException

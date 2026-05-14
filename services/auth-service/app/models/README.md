@@ -1,15 +1,10 @@
-# Models
+# models/
 
-Database models and Pydantic schemas.
+SQLAlchemy database table definitions.
 
-## Purpose
+See the full documentation in [`../../../README.md`](../../../README.md).
 
-- Database ORM models (SQLAlchemy)
-- Request schemas (Pydantic)
-- Response schemas (Pydantic)
-- Shared data structures
+## Files
 
-## Structure
-
-- Database tables defined here
-- API request/response validation schemas
+- `user.py` — `users` table: id, email, hashed password, role.
+- `token.py` — `tokens` table: id, user_id, refresh_token. Used for session revocation.

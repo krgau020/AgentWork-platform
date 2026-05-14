@@ -1,11 +1,11 @@
-# Core Module
+# core/
 
-Core configuration, security, and helper functions.
+Shared utilities used across the gateway.
 
-## Purpose
+See the full documentation in [`../../../README.md`](../../../README.md).
 
-- Application configuration
-- Security utilities (JWT, authentication)
-- Common middleware
-- Error handlers
-- Constants
+## Files
+
+- `config.py` — Reads `JWT_SECRET_KEY` and `AUTH_SERVICE_URL` from environment.
+- `security.py` — `verify_jwt_token` dependency. Validates Bearer tokens on protected routes.
+- `middleware.py` — Stamps every request with a UUID `request_id` for distributed tracing.

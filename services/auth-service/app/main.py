@@ -1,6 +1,28 @@
 """
-Application entry point.
-Initializes FastAPI app and database.
+Auth Service — Application Bootstrap (main.py)
+
+Purpose:
+    Entry point for the auth service. Initializes FastAPI, registers all routes
+    under the /auth prefix, and handles database startup.
+
+What this file does:
+    1. Creates the FastAPI app instance.
+    2. Mounts the router from app.api.routes with prefix /auth.
+       All endpoints are accessible at /auth/signup, /auth/login, /auth/refresh.
+    3. On startup: waits for PostgreSQL to be ready (with retry logic),
+       then auto-creates all DB tables via SQLAlchemy metadata.
+
+Startup behavior (on_startup):
+    wait_for_db() retries up to 10 times (2s apart) before failing.
+    This handles the race condition where auth-service starts before postgres
+    is fully ready inside Docker Compose.
+    Base.metadata.create_all() creates users and tokens tables if they don't exist.
+    In production: replace create_all with Alembic migrations.
+
+How to run locally (outside Docker):
+    uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+Port: 8001
 """
 
 from fastapi import FastAPI

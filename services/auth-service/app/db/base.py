@@ -1,8 +1,20 @@
 """
-Base class for all database models.
+Auth Service — SQLAlchemy Declarative Base (app/db/base.py)
 
-Every model (User, Token, etc.) must inherit from this.
-SQLAlchemy uses this to create tables.
+Purpose:
+    Defines the Base class that all SQLAlchemy models inherit from.
+    SQLAlchemy uses Base.metadata to track all registered models and
+    create their corresponding database tables.
+
+Usage:
+    Every model file (user.py, token.py) imports Base from here and inherits:
+        class User(Base): ...
+
+    main.py calls Base.metadata.create_all(bind=engine) on startup to
+    create all tables that don't yet exist in PostgreSQL.
+
+In production:
+    Replace create_all with Alembic migrations for version-controlled schema changes.
 """
 
 from sqlalchemy.orm import declarative_base

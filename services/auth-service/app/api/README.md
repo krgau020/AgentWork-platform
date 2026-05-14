@@ -1,13 +1,9 @@
-# API Routes
+# api/
 
-REST API endpoints and route handlers.
+HTTP route handlers for the auth service.
 
-## Purpose
+See the full documentation in [`../../../README.md`](../../../README.md).
 
-Defines all HTTP endpoints exposed by this service.
+## Files
 
-## Example Structure
-
-- Routes organized by feature/resource
-- Each route has request/response validation
-- Dependency injection for services
+- `routes.py` — POST /signup, /login, /refresh. Validates requests, calls services/auth_service.py, maps errors to HTTP codes.

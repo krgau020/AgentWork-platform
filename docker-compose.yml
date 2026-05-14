@@ -26,8 +26,10 @@ services:
     build: ./services/gateway
     ports:
       - "8000:8000"
-    depends_on:
-      - auth-service
+    env_file:
+      - ./services/gateway/.env
+    volumes:
+      - ./services/gateway:/app
 
   auth-service:
     build: ./services/auth-service

@@ -1,16 +1,9 @@
-# Services
+# services/
 
-Service layer with business logic.
+Business logic layer. No HTTP concerns here.
 
-## Purpose
+See the full documentation in [`../../../README.md`](../../../README.md).
 
-- Business logic implementation
-- Database operations
-- External service calls
-- Data processing
+## Files
 
-## Structure
-
-- Separate services for different domains
-- Independent and testable
-- Called by API routes
+- `auth_service.py` — `create_user`, `login_user`, `refresh_access_token`. Called by routes, talks to DB and security utils.
