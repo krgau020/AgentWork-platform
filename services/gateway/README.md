@@ -114,3 +114,21 @@ Downstream services read these headers. They never see the raw JWT.
 | Token expired | 401 | `Token expired` |
 | Invalid token | 401 | `Invalid token` |
 | Downstream service down | 503 | `Auth/Document service unavailable` |
+
+---
+
+## Testing
+
+Full test walkthrough (Bruno setup, token flow, troubleshooting): [`architecture_steps_info/project-setup/4a.gateway_testing.md`](../../architecture_steps_info/project-setup/4a.gateway_testing.md)
+
+**Quick reference:**
+
+| Method | URL | Token in Header? | Body |
+|---|---|---|---|
+| GET | `/health` | No | — |
+| POST | `/auth/signup` | No | `{email, password}` |
+| POST | `/auth/login` | No | `{email, password}` |
+| POST | `/auth/refresh` | No | `{refresh_token}` |
+| GET | `/documents` | Yes (access_token) | — |
+
+Token goes in the `Authorization` header as `Bearer <access_token>` — not in the body or URL.
