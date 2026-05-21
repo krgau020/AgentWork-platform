@@ -1,11 +1,9 @@
-git commit -m "Remove architecture_steps_info from tracking"
 # Environment variables
 .env
 .env.local
 
 # Node modules
 node_modules/
-
 
 # Python
 __pycache__/
@@ -36,7 +34,5 @@ build/
 # Project specific
 architecture_steps_info/
 
-
-
-# future requirements
-future_improvement_neede.md
+# Claude Code local data
+.claude/
