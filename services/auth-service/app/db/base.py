@@ -1,22 +1,35 @@
 """
-Auth Service — SQLAlchemy Declarative Base (app/db/base.py)
+db/base.py — SQLAlchemy declarative base.
 
-Purpose:
-    Defines the Base class that all SQLAlchemy models inherit from.
-    SQLAlchemy uses Base.metadata to track all registered models and
-    create their corresponding database tables.
+Role in the system:
+    Defines the shared Base class that every ORM model in the auth service
+    must inherit from. SQLAlchemy uses this Base to track all mapped classes
+    and their associated table definitions via Base.metadata.
 
-Usage:
-    Every model file (user.py, token.py) imports Base from here and inherits:
-        class User(Base): ...
+    This file has no application logic — it exists solely to avoid circular
+    imports. If models imported session.py and session.py imported models,
+    Python would deadlock on startup. Separating Base into its own file
+    breaks that cycle:
 
-    main.py calls Base.metadata.create_all(bind=engine) on startup to
-    create all tables that don't yet exist in PostgreSQL.
+        session.py  imports  base.py   (engine + sessionmaker)
+        models/*.py import   base.py   (Base class)
+        main.py     imports  both      (registers models, creates engine)
 
-In production:
-    Replace create_all with Alembic migrations for version-controlled schema changes.
+Design decisions:
+    - declarative_base() is the classic SQLAlchemy pattern. The newer
+      DeclarativeBase (SQLAlchemy 2.0) style can be adopted later without
+      changing how models are defined.
+    - Base.metadata is not used to create tables here. Table creation is
+      handled by infra/postgres/init.sql via Docker on first container start,
+      giving explicit control over the schema separate from the ORM.
+
+Dependencies:
+    - sqlalchemy.orm.declarative_base
+    - Imported by: all files in app/models/, app/db/session.py, app/main.py
 """
 
 from sqlalchemy.orm import declarative_base
 
+# All ORM model classes inherit from this.
+# SQLAlchemy registers them in Base.metadata automatically.
 Base = declarative_base()

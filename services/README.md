@@ -1,46 +1,61 @@
-# Services
+# services/
 
-All microservices for the FinSight AI Platform.
+All microservices for the AgentWork platform.
 
-## Services Structure
+---
 
-Each service follows the same pattern:
+## Current Services
+
+| Service | Port | Status | Purpose |
+|---------|------|--------|---------|
+| [gateway](gateway/) | 8000 | Planned | API entry point — JWT validation, routing |
+| [auth-service](auth-service/) | 8001 | Built | Signup, login, token issuance and rotation |
+| [user-service](user-service/) | 8003 | Planned | Orgs, groups, policies, user assignments |
+
+Frontend (Next.js, port 3000) lives in `frontend/` at the project root — started via `--profile frontend`.
+
+---
+
+## Folder Pattern
+
+Every service follows the same structure:
+
 ```
 service-name/
 ├── app/
-│   ├── api/          - API routes & endpoints
-│   ├── core/         - Business logic, configs
-│   ├── models/       - Database models & schemas
-│   ├── services/     - Service layer
-│   └── main.py       - FastAPI entry point
-├── Dockerfile        - Docker configuration
-├── requirements.txt  - Python dependencies
-├── .env              - Environment variables
-└── README.md         - Service documentation
+│   ├── api/          — HTTP route handlers (thin layer, no business logic)
+│   ├── core/         — Config, security utilities
+│   ├── db/           — SQLAlchemy engine, session, Base
+│   ├── models/       — ORM models (one file per table)
+│   ├── schemas/      — Pydantic request/response schemas
+│   ├── services/     — Business logic
+│   └── main.py       — FastAPI app, startup, health endpoint
+├── Dockerfile
+├── requirements.txt
+├── .env              — Local dev env vars (not committed)
+└── README.md         — Service documentation
 ```
 
-## Services List
+---
 
-| Service | Port | Purpose |
-|---------|------|---------|
-| Gateway | 8000 | API Gateway, routes requests |
-| Auth Service | 8001 | Authentication, JWT tokens |
-| Document Service | 8002 | Document upload/storage |
-| User Service | 8003 | User management |
-| AI Service | 8004 | AI/ML operations |
-| Validation Service | 8005 | Data validation |
+## Service Communication
 
-## Service Port Mapping (Fixed)
+All services share the `agentwork-platform` Docker network. They reach each other by service name:
 
 ```
-🚪 Gateway             → 8000
-🔐 Auth Service        → 8001
-📄 Document Service    → 8002
-👤 User Service        → 8003
-🤖 AI Service          → 8004
-✔️ Validation Service  → 8005
+Client (Browser / Bruno)
+    │
+    └─→ gateway:8000
+            ├─→ auth-service:8001
+            └─→ user-service:8003
 ```
 
-## Communication
+Each service connects to the shared Postgres instance at `postgres:5432` (database: `agentwork`).
 
-Services communicate via HTTP/REST and share data through PostgreSQL & Redis.
+---
+
+## Adding a New Service
+
+1. Create the folder under `services/your-service/` following the pattern above
+2. Add it to `docker-compose.yml` with the next available port
+3. Register it in `service_registry` table so the gateway can route to it

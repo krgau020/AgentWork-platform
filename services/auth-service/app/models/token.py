@@ -1,34 +1,54 @@
 """
-Auth Service — Token Model (app/models/token.py)
+models/token.py — ORM model for the 'tokens' table.
 
-Purpose:
-    SQLAlchemy model for the tokens table. Stores refresh tokens so they
-    can be revoked before their natural expiry.
+Role in the system:
+    Stores active refresh tokens. This is the server-side record that makes
+    token revocation possible. When a user logs out, their refresh token row
+    is deleted — even if the JWT itself hasn't expired yet, it can no longer
+    be used to get a new access token.
 
-Table: tokens
-    id            — auto-incrementing primary key.
-    user_id       — references the user this token belongs to.
-    refresh_token — the full JWT refresh token string. Unique constraint
-                    prevents the same token being stored twice.
+    Access tokens are NOT stored here. They are stateless JWTs — validated
+    by signature and expiry alone — and cannot be individually revoked before
+    they expire. This is a deliberate trade-off: storing every access token
+    would require a DB lookup on every API call, killing performance.
 
-How revocation works:
-    When a user logs in, their refresh_token is saved here.
-    On /auth/refresh: service checks this table first. If the token is not
-    found, it is rejected — even if the JWT itself is still valid.
-    To revoke a session: delete the row. That user must log in again.
+Columns:
+    id            — UUID primary key.
+    user_id       — FK to users.id. Identifies which user owns this token.
+                    Allows querying "all active sessions for user X" in the future.
+    refresh_token — The full JWT string. Unique constraint ensures the same
+                    token cannot be stored twice (guards against race conditions
+                    in token rotation).
+    created_at    — When the token was issued. Useful for auditing active sessions
+                    and for future cleanup jobs that expire very old tokens.
 
-Note:
-    Access tokens are NOT stored here. They are stateless — they expire
-    on their own after 120 minutes. Only refresh tokens need DB storage
-    because they live for 7 days and need manual revocation capability.
+Design decisions:
+    - Token rotation is implemented: on every /refresh call, the old row is
+      deleted and a new row is inserted. This means a stolen refresh token
+      can only be used once before it's rotated away.
+    - No 'expires_at' column yet. The expiry is encoded in the JWT itself
+      (decode_token checks it). A cleanup job to remove expired rows from
+      the DB is a future improvement.
+    - One user can have multiple active tokens (multiple devices/sessions).
+      Deleting all tokens for a user_id is a "logout everywhere" operation.
+
+Dependencies:
+    - app.db.base.Base  →  SQLAlchemy declarative base
+    - users table       →  FK constraint on user_id
+    - Used by: app.services.auth_service (create, delete on rotation/logout)
 """
 
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, String, DateTime, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+import uuid
+from datetime import datetime
 from app.db.base import Base
+
 
 class Token(Base):
     __tablename__ = "tokens"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer)
-    refresh_token = Column(String, unique=True)
+    id            = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id       = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    refresh_token = Column(String, unique=True, nullable=False)
+    created_at    = Column(DateTime, default=datetime.utcnow, nullable=False)

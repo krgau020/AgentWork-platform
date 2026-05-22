@@ -1,66 +1,159 @@
 """
-Auth Service — API Route Handlers (app/api/routes.py)
+api/routes.py — HTTP route handlers for all auth endpoints.
 
-Purpose:
-    Defines all HTTP endpoints for authentication. Each route validates the
-    incoming request, calls the appropriate business logic from auth_service.py,
-    and handles errors with proper HTTP status codes.
+Role in the system:
+    This module is the HTTP boundary of the auth service. It translates
+    incoming HTTP requests into calls to auth_service functions, and
+    translates the results (or exceptions) back into HTTP responses.
 
-Routes:
-    POST /auth/signup   → creates a new user account.
-                          Raises 400 if email already exists or password is too weak.
-    POST /auth/login    → verifies credentials, returns access + refresh tokens.
-                          Raises 401 if credentials are wrong.
-    POST /auth/refresh  → validates refresh_token, returns a new access_token.
-                          Raises 401 if refresh token is invalid or revoked.
+    Routes are intentionally thin — no business logic lives here.
+    All decisions (is the password correct? does the token exist?) are
+    made in app.services.auth_service. This keeps routes easy to read
+    and makes the business logic independently testable.
 
-Design notes:
-    - get_db() is a FastAPI dependency that provides a DB session per request
-      and guarantees the session is closed after the request, even on errors.
-    - Business logic lives in app/services/auth_service.py, not here.
-      Routes only handle HTTP concerns (request parsing, error mapping).
-    - ValueError from service layer maps to HTTP 400 or 401 as appropriate.
+Error handling strategy:
+    All routes use a shared error_response() helper that returns a
+    structured JSON body with four fields:
+        - error_code:  machine-readable string (e.g. "CONFLICT", "TOKEN_INVALID")
+        - message:     human-readable description
+        - request_id:  forwarded from the x-request-id header (set by the gateway)
+                       for request tracing across services
+        - timestamp:   UTC ISO 8601 timestamp for log correlation
+
+Endpoints (all prefixed /api/v1/auth by main.py):
+    POST /signup   →  create user + org + default group
+    POST /login    →  verify credentials, return token pair
+    POST /refresh  →  rotate refresh token, return new token pair
+    POST /logout   →  revoke refresh token
+
+Dependencies:
+    - app.db.session         →  get_db (database session per request)
+    - app.schemas.user       →  request/response Pydantic models
+    - app.services.auth_service  →  business logic functions
+    - Used by: app.main (router is registered there with prefix /api/v1/auth)
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from app.db.session import SessionLocal
-from app.schemas.user import UserCreate, UserLogin, TokenResponse, RefreshTokenRequest
-from app.services.auth_service import create_user, login_user, refresh_access_token
+from datetime import datetime, timezone
+
+from app.db.session import get_db
+from app.schemas.user import (
+    UserCreate, UserLogin, TokenResponse,
+    RefreshTokenRequest, LogoutRequest, RefreshResponse
+)
+from app.services.auth_service import (
+    create_user, login_user, refresh_access_token, logout_user
+)
 
 router = APIRouter()
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def error_response(status_code: int, error_code: str, message: str, request: Request) -> JSONResponse:
+    """
+    Build a standardized error JSON response.
+
+    All error responses in the auth service use this format so that clients
+    and the gateway can handle errors consistently regardless of which endpoint
+    they came from.
+
+    Args:
+        status_code: HTTP status code (e.g. 401, 409).
+        error_code:  Machine-readable identifier for the error type.
+        message:     Human-readable description shown to the client.
+        request:     The incoming FastAPI request (used to extract request_id).
+
+    Returns:
+        JSONResponse with the structured error body and the given status code.
+    """
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error_code": error_code,
+            "message": message,
+            "request_id": request.headers.get("x-request-id", ""),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 @router.post("/signup")
-def signup(user: UserCreate, db: Session = Depends(get_db)):
+def signup(user: UserCreate, request: Request, db: Session = Depends(get_db)):
+    """
+    Register a new user and create their organization.
+
+    Creates four records atomically: organization, user, admin group,
+    and user-group membership. If any step fails, nothing is saved.
+
+    Returns:
+        200 with {"message": "User created successfully"} on success.
+        409 CONFLICT if the email or organization slug is already taken,
+            or if the password does not meet policy requirements.
+    """
     try:
-        return create_user(db, user.email, user.password)
+        create_user(db, user.email, user.password, user.org_name)
+        return {"message": "User created successfully"}
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        return error_response(409, "CONFLICT", str(e), request)
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(user: UserLogin, db: Session = Depends(get_db)):
+def login(user: UserLogin, request: Request, db: Session = Depends(get_db)):
+    """
+    Authenticate a user and issue a JWT token pair.
+
+    Returns a generic "invalid credentials" message for both wrong email and
+    wrong password — this prevents user enumeration (an attacker cannot tell
+    whether the email exists).
+
+    Returns:
+        200 with {access_token, refresh_token} on success.
+        401 TOKEN_INVALID if credentials are wrong or account is inactive.
+    """
     tokens = login_user(db, user.email, user.password)
 
     if not tokens:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        return error_response(401, "TOKEN_INVALID", "Invalid email or password", request)
 
     return {"access_token": tokens[0], "refresh_token": tokens[1]}
 
 
-@router.post("/refresh")
-def refresh(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+@router.post("/refresh", response_model=RefreshResponse)
+def refresh(req: RefreshTokenRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Rotate a refresh token and issue a new token pair.
+
+    The submitted refresh token is immediately invalidated on success.
+    The client must use the new refresh token for subsequent calls.
+    Submitting the same refresh token twice will fail on the second attempt.
+
+    Returns:
+        200 with {access_token, refresh_token} on success.
+        401 TOKEN_INVALID if the token is expired, revoked, or malformed.
+    """
     try:
-        new_token = refresh_access_token(db, request.refresh_token)
-        return {"access_token": new_token}
+        new_access, new_refresh = refresh_access_token(db, req.refresh_token)
+        return {"access_token": new_access, "refresh_token": new_refresh}
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        return error_response(401, "TOKEN_INVALID", "Invalid or expired refresh token", request)
+
+
+@router.post("/logout")
+def logout(req: LogoutRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Revoke a refresh token.
+
+    After this call, the refresh token cannot be used to obtain new access
+    tokens. Any existing access tokens remain valid until they expire naturally
+    (access tokens are stateless and cannot be individually revoked).
+
+    Returns:
+        200 with {"message": "Logged out successfully"} on success.
+        401 TOKEN_INVALID if the token is not found or already revoked.
+    """
+    try:
+        logout_user(db, req.refresh_token)
+        return {"message": "Logged out successfully"}
+    except ValueError:
+        return error_response(401, "TOKEN_INVALID", "Token not found or already revoked", request)
