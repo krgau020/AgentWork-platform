@@ -1,69 +1,82 @@
 """
-Gateway JWT Validation (app/core/security.py)
+JWT Validation (app/core/security.py)
 
 Purpose:
-    Central authentication layer for the gateway. The verify_jwt_token function
-    is injected as a FastAPI dependency (Depends) on every protected route.
-    It runs automatically before the route handler is called.
+    Validates the JWT access token on every protected request.
+    Used as a FastAPI Depends() dependency — protected routes inject this
+    function and receive the decoded payload if the token is valid.
 
-How it works:
-    1. Reads the Authorization header from the incoming request.
-    2. Splits it into scheme (must be "Bearer") and the raw JWT string.
-    3. Decodes and verifies the JWT using JWT_SECRET_KEY and HS256 algorithm.
-    4. Returns the decoded payload dict {sub, role, exp} to the route handler.
+Validation steps:
+    1. Read the Authorization header from the incoming request
+    2. Check it starts with "Bearer " → if not → 401 TOKEN_MISSING
+    3. Extract the token string (everything after "Bearer ")
+    4. Decode the JWT using SECRET_KEY and ALGORITHM
+       → If expired   → 401 TOKEN_EXPIRED
+       → If invalid   → 401 TOKEN_INVALID
+       → If valid     → return the decoded payload dict
 
-Error responses:
-    No Authorization header   → 401 "Missing authorization token"
-    Wrong scheme (not Bearer) → 401 "Invalid auth scheme"
-    Token expired             → 401 "Token expired"  (ExpiredSignatureError)
-    Invalid/tampered token    → 401 "Invalid token"  (JWTError)
+Decoded payload (set by auth-service at login):
+    {
+        "sub":    "alice@acme.com",
+        "org_id": "550e8400-e29b-41d4-a716-446655440000",
+        "groups": ["admin"],
+        "exp":    1748000000
+    }
 
-Important:
-    ExpiredSignatureError is caught separately from JWTError so the caller
-    knows whether to refresh the token or to log in again.
+FastAPI Depends pattern:
+    @router.get("/api/v1/users")
+    async def list_users(payload = Depends(get_token_payload)):
+        # Token invalid → HTTPException raised → route never runs → 401 sent
+        # Token valid   → payload = { sub, org_id, groups, exp }
+
+Why raise HTTPException instead of return:
+    When used as Depends(), raising HTTPException stops execution and sends
+    the error to the client. Returning a value would pass it to the route
+    handler as the payload argument — which is wrong behavior for an auth guard.
+
+Secret key alignment:
+    auth-service signs tokens with SECRET_KEY.
+    Gateway verifies with the same SECRET_KEY.
+    If they differ, every token is rejected — even valid ones.
+    Both read from their own .env files which must have the same value.
 """
 
-from jose import jwt, JWTError, ExpiredSignatureError
-from fastapi import HTTPException, Header
+from fastapi import Depends, HTTPException, Request
+from jose import JWTError, jwt
+
 from app.core.config import settings
 
 
-def verify_jwt_token(authorization: str = Header(None)):
-    """
-    Validate JWT token from Authorization header.
-    """
+def get_token_payload(request: Request) -> dict:
+    auth = request.headers.get("Authorization", "")
 
-    if not authorization:
+    if not auth.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
-            detail="Missing authorization token"
+            detail={
+                "error_code": "TOKEN_MISSING",
+                "message": "Missing or invalid Authorization header",
+            },
         )
+
+    token = auth[len("Bearer "):]
 
     try:
-        scheme, token = authorization.split()
-
-        if scheme.lower() != "bearer":
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return payload
+    except JWTError as e:
+        if "expired" in str(e).lower():
             raise HTTPException(
                 status_code=401,
-                detail="Invalid auth scheme"
+                detail={
+                    "error_code": "TOKEN_EXPIRED",
+                    "message": "Access token has expired. Use /api/v1/auth/refresh to get a new one.",
+                },
             )
-
-        payload = jwt.decode(
-            token,
-            settings.JWT_SECRET_KEY,
-            algorithms=["HS256"]
-        )
-
-        return payload
-
-    except ExpiredSignatureError:
         raise HTTPException(
             status_code=401,
-            detail="Token expired"
-        )
-
-    except JWTError:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid token"
+            detail={
+                "error_code": "TOKEN_INVALID",
+                "message": "Invalid or malformed token",
+            },
         )

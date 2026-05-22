@@ -2,35 +2,41 @@
 Gateway Configuration (app/core/config.py)
 
 Purpose:
-    Loads all environment-based configuration for the gateway. No secrets or
-    URLs are hardcoded here — everything is read from environment variables.
+    Reads environment variables from .env and makes them available throughout
+    the gateway as a single typed settings object.
 
-Settings loaded:
-    JWT_SECRET_KEY   — used to verify incoming JWT tokens. MUST match the
-                       SECRET_KEY used by auth-service to sign tokens.
-                       If they differ, all token validation fails with "Invalid token".
-    AUTH_SERVICE_URL — internal Docker URL for auth-service.
-                       Default: http://auth-service:8001 (Docker service name).
+Why Pydantic BaseSettings:
+    Reads from .env automatically, validates required fields at startup,
+    and is type-safe — SECRET_KEY is guaranteed to be a str, never None.
+    One import (settings) gives access to all config values anywhere in the code.
 
-How config is loaded:
-    .env file → docker-compose (env_file:) → container env → os.getenv() here
+Variables:
+    SECRET_KEY       — JWT signing secret. Must exactly match auth-service's
+                       SECRET_KEY. If they differ, every token is rejected as
+                       invalid — even perfectly good ones.
+    ALGORITHM        — JWT signing algorithm. HS256 matches auth-service.
+    AUTH_SERVICE_URL — Internal Docker URL for auth-service.
+                       "http://auth-service:8001" uses Docker's internal DNS —
+                       the name "auth-service" resolves to the container's IP.
+    USER_SERVICE_URL — Internal Docker URL for user-service.
 
-In production:
-    Replace .env with AWS Secrets Manager, HashiCorp Vault, or GCP Secret Manager.
-    Never commit .env to git.
+Usage:
+    from app.core.config import settings
+    settings.SECRET_KEY         → "supersecret"
+    settings.AUTH_SERVICE_URL   → "http://auth-service:8001"
 """
 
-import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings
 
-load_dotenv()
 
-class Settings:
-    AUTH_SERVICE_URL = os.getenv(
-        "AUTH_SERVICE_URL",
-        "http://auth-service:8001"
-    )
+class Settings(BaseSettings):
+    SECRET_KEY: str
+    ALGORITHM: str = "HS256"
+    AUTH_SERVICE_URL: str
+    USER_SERVICE_URL: str
 
-    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "supersecret")
+    class Config:
+        env_file = ".env"
+
 
 settings = Settings()

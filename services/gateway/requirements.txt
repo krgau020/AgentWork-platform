@@ -1,5 +1,6 @@
 fastapi
-uvicorn
-python-jose
+uvicorn[standard]
 python-dotenv
+pydantic-settings
+python-jose[cryptography]
 httpx

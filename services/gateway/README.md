@@ -1,134 +1,193 @@
 # Gateway Service
 
-Central entry point for all FinSight platform requests. The frontend only knows this service — it routes internally to auth-service, document-service, and others.
+Single entry point for all external traffic on the AgentWork platform. Every request from a browser, mobile app, or Bruno passes through here. No client talks directly to auth-service or user-service.
 
-**Port:** `8000`
-**Base URL (local):** `http://localhost:8000`
-
----
-
-## What This Service Does
-
-- Validates JWT tokens on every protected request (centralized auth)
-- Routes requests to the correct downstream service
-- Propagates user identity (email, role) via internal headers
-- Stamps every request with a unique request_id for tracing
-- Handles CORS for browser-based frontend access
-- Returns clean 503 errors if a downstream service is down
+Full architecture context: [architecture_steps_info/project-setup/4.gateway-service.md](../../architecture_steps_info/project-setup/4.gateway-service.md)
 
 ---
 
-## File Structure
+## What It Does
+
+Four responsibilities — nothing else:
+
+1. **Validate JWT** on every protected request
+2. **Extract identity** from the token (email, org_id, groups)
+3. **Forward identity as headers** to downstream services
+4. **Return the downstream response** to the client
+
+No business logic. No database. Just a smart traffic director that checks your ID at the door.
+
+---
+
+## Folder Structure
 
 ```
-gateway/
+services/gateway/
 │
-├── app/
-│   ├── main.py              Entry point. Creates FastAPI app, registers
-│   │                        middleware and CORS, mounts router.
-│   │
-│   ├── api/
-│   │   ├── __init__.py      Marks api/ as a Python package.
-│   │   └── routes.py        All route definitions. Forwards requests to
-│   │                        downstream services using httpx. Protected routes
-│   │                        require JWT via verify_jwt_token dependency.
-│   │
-│   └── core/
-│       ├── __init__.py      Marks core/ as a Python package.
-│       ├── config.py        Reads JWT_SECRET_KEY and AUTH_SERVICE_URL
-│       │                    from environment variables.
-│       ├── security.py      verify_jwt_token — validates Bearer token,
-│       │                    returns decoded payload {sub, role, exp}.
-│       └── middleware.py    Stamps every request with a UUID request_id
-│                            for distributed tracing across services.
+├── .env                        Environment variables (dev only)
+├── Dockerfile                  python:3.11-slim, uvicorn --reload
+├── requirements.txt            Python dependencies
 │
-├── requirements.txt         fastapi, uvicorn, python-jose, httpx, python-dotenv
-├── Dockerfile               Builds container. Runs uvicorn with --reload.
-└── .env                     JWT_SECRET_KEY, AUTH_SERVICE_URL. Not committed to git.
+└── app/
+    ├── main.py                 FastAPI app bootstrap, CORS, middleware, exception handler
+    │
+    ├── api/
+    │   └── routes.py           All route handlers — public (auth) and protected (user-service)
+    │
+    └── core/
+        ├── config.py           Reads env vars via Pydantic BaseSettings
+        ├── middleware.py       Stamps every request with a UUID (request_id)
+        └── security.py        JWT validation — get_token_payload() Depends function
 ```
 
----
-
-## API Endpoints
-
-| Method | Route | Auth | Forwards To | Notes |
-|---|---|---|---|---|
-| GET | `/health` | No | — | Gateway liveness check |
-| POST | `/auth/signup` | No | auth-service:8001 | Create user account |
-| POST | `/auth/login` | No | auth-service:8001 | Returns access + refresh tokens |
-| POST | `/auth/refresh` | No | auth-service:8001 | Returns new access token |
-| GET | `/documents` | Yes | document-service:8002 | Protected — needs Bearer token |
+No `db/`, `models/`, or `schemas/` — the gateway has no database and no business logic.
 
 ---
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|---|---|---|
-| `JWT_SECRET_KEY` | Yes | Must match `SECRET_KEY` in auth-service |
-| `AUTH_SERVICE_URL` | No | Default: `http://auth-service:8001` |
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `SECRET_KEY` | `supersecret` | JWT verification key — must match auth-service exactly |
+| `ALGORITHM` | `HS256` | JWT algorithm — must match auth-service |
+| `AUTH_SERVICE_URL` | `http://auth-service:8001` | Internal Docker URL for auth-service |
+| `USER_SERVICE_URL` | `http://user-service:8003` | Internal Docker URL for user-service |
 
 ---
 
-## How to Run
+## Running
 
-**With Docker (recommended):**
 ```bash
-docker compose up -d --build gateway
+# Start gateway only
+docker compose up --build gateway
+
+# Start all services
+docker compose up --build
+
+# Live logs
+docker compose logs -f gateway
+
+# Rebuild after requirements.txt change
+docker compose up --build gateway
 ```
 
-**Locally (for debugging):**
-```bash
-cd services/gateway
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+Code changes in `app/` are picked up automatically via `--reload` + volume mount. No rebuild needed for Python changes.
+
+---
+
+## API Routes
+
+### Public (no token required)
+
+| Method | Route | Forwards To |
+|--------|-------|-------------|
+| GET | `/health` | Gateway answers directly |
+| POST | `/api/v1/auth/signup` | auth-service:8001 |
+| POST | `/api/v1/auth/login` | auth-service:8001 |
+| POST | `/api/v1/auth/refresh` | auth-service:8001 |
+| POST | `/api/v1/auth/logout` | auth-service:8001 |
+
+### Protected (JWT required)
+
+All routes below require `Authorization: Bearer <access_token>` header.
+Gateway validates the token, adds identity headers, forwards to user-service.
+
+| Method | Route | Forwards To |
+|--------|-------|-------------|
+| GET / POST | `/api/v1/orgs` | user-service:8003 |
+| GET / POST / DELETE | `/api/v1/orgs/{path}` | user-service:8003 |
+| GET / POST | `/api/v1/users` | user-service:8003 |
+| GET / POST / DELETE | `/api/v1/users/{path}` | user-service:8003 |
+| GET / POST | `/api/v1/groups` | user-service:8003 |
+| GET / POST / DELETE | `/api/v1/groups/{path}` | user-service:8003 |
+| GET / POST | `/api/v1/policies` | user-service:8003 |
+| GET / POST / DELETE | `/api/v1/policies/{path}` | user-service:8003 |
+
+---
+
+## Identity Headers (added to every protected forward)
+
+```
+x-user-email:   alice@acme.com
+x-org-id:       550e8400-e29b-41d4-a716-446655440000
+x-user-groups:  admin
+x-request-id:   3f2a1b4c-8d2e-4f1a-b3c9-7e1d5f9a2c8b
 ```
 
-**Check logs:**
-```bash
-docker compose logs gateway --follow
+Downstream services read these headers — they never decode JWTs.
+
+---
+
+## Error Response Format
+
+All errors from the gateway follow this shape:
+
+```json
+{
+  "error_code": "TOKEN_INVALID",
+  "message": "Invalid or malformed token",
+  "request_id": "3f2a1b4c-8d2e-4f1a-b3c9-7e1d5f9a2c8b",
+  "timestamp": "2026-05-21T14:24:37.540075+00:00"
+}
+```
+
+| Status | error_code | When |
+|--------|-----------|------|
+| 401 | `TOKEN_MISSING` | No Authorization header or not Bearer scheme |
+| 401 | `TOKEN_EXPIRED` | Access token past its 2-hour expiry |
+| 401 | `TOKEN_INVALID` | Malformed, tampered, or wrong secret key |
+| 503 | `SERVICE_UNAVAILABLE` | Downstream service is not reachable |
+| 504 | `GATEWAY_TIMEOUT` | Downstream service took too long to respond |
+
+---
+
+## Request Flow
+
+```
+Client (Browser / Bruno)
+    │
+    │  POST /api/v1/auth/login  { email, password }
+    ▼
+Gateway :8000
+    │  No JWT check (public route)
+    │  httpx.post(auth-service:8001/api/v1/auth/login)
+    ▼
+Auth Service :8001
+    │  Verifies password, issues tokens
+    ▼
+Gateway returns { access_token, refresh_token } to client
+
+─────────────────────────────────────────────────────────
+
+Client
+    │
+    │  GET /api/v1/users
+    │  Authorization: Bearer eyJhbGci...
+    ▼
+Gateway :8000
+    │  1. verify_jwt_token() → valid payload
+    │  2. Add headers:
+    │       x-user-email:  alice@acme.com
+    │       x-org-id:      550e8400-...
+    │       x-user-groups: admin
+    │       x-request-id:  abc-123-xyz
+    │  3. httpx.get(user-service:8003/api/v1/users)
+    ▼
+User Service :8003
+    │  Reads x-org-id, queries only that tenant's data
+    ▼
+Gateway returns response to client
 ```
 
 ---
 
-## Internal Headers Sent to Services
+## Dependencies
 
-On protected routes, after JWT validation, gateway forwards:
-
-```
-x-user-email:  admin@test.com
-x-user-role:   user
-x-request-id:  3f2a1b4c-8d2e-4f1a-b3c9-...
-```
-
-Downstream services read these headers. They never see the raw JWT.
-
----
-
-## Error Responses
-
-| Situation | Status | Response |
-|---|---|---|
-| No Authorization header | 401 | `Missing authorization token` |
-| Wrong scheme | 401 | `Invalid auth scheme` |
-| Token expired | 401 | `Token expired` |
-| Invalid token | 401 | `Invalid token` |
-| Downstream service down | 503 | `Auth/Document service unavailable` |
-
----
-
-## Testing
-
-Full test walkthrough (Bruno setup, token flow, troubleshooting): [`architecture_steps_info/project-setup/4a.gateway_testing.md`](../../architecture_steps_info/project-setup/4a.gateway_testing.md)
-
-**Quick reference:**
-
-| Method | URL | Token in Header? | Body |
-|---|---|---|---|
-| GET | `/health` | No | — |
-| POST | `/auth/signup` | No | `{email, password}` |
-| POST | `/auth/login` | No | `{email, password}` |
-| POST | `/auth/refresh` | No | `{refresh_token}` |
-| GET | `/documents` | Yes (access_token) | — |
-
-Token goes in the `Authorization` header as `Bearer <access_token>` — not in the body or URL.
+| Package | Purpose |
+|---------|---------|
+| `fastapi` | Web framework |
+| `uvicorn[standard]` | ASGI server |
+| `pydantic-settings` | Config from .env |
+| `python-jose[cryptography]` | JWT decode and verification |
+| `httpx` | Async HTTP client for forwarding requests |
+| `python-dotenv` | .env file loading |
