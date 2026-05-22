@@ -64,20 +64,25 @@ services/user-service/
     │   ├── group.py            → groups table
     │   ├── policy.py           → policies + policy_statements tables
     │   ├── group_policy.py     → group_policies join table
-    │   └── user_group.py       → user_groups join table
+    │   ├── user_group.py       → user_groups join table
+    │   └── invitation.py       → invitations table (INSERT + READ)
     │
     ├── schemas/                Pydantic — request bodies and response shapes
-    │   ├── organization.py     OrgResponse
-    │   ├── group.py            GroupCreate, GroupResponse, PolicyAssign
-    │   ├── policy.py           PolicyCreate, StatementCreate, PolicyResponse, StatementResponse
-    │   └── user.py             UserResponse, GroupAssign, UserPoliciesResponse
+    │   ├── organization.py     OrgResponse (returns org_id)
+    │   ├── group.py            GroupCreate, GroupResponse (returns group_id), PolicyAssign
+    │   ├── policy.py           PolicyCreate, StatementCreate,
+    │   │                       PolicyResponse (returns policy_id),
+    │   │                       StatementResponse (returns statement_id)
+    │   ├── user.py             UserResponse (returns user_id), GroupAssign, UserPoliciesResponse
+    │   └── invite.py           InviteCreate, InviteResponse
     │
     └── services/               Business logic — DB queries
         ├── org_service.py      get_org
         ├── group_service.py    create_group, list_groups, assign_policy, remove_policy,
         │                       add_user_to_group, remove_user_from_group
         ├── policy_service.py   create_policy, list_policies, add_statement, remove_statement
-        └── user_service.py     get_user, list_users, get_user_groups, get_user_policies
+        ├── user_service.py     get_user, list_users, get_user_groups, get_user_policies
+        └── invite_service.py   create_invite
 ```
 
 ---
@@ -123,6 +128,7 @@ All routes require `Authorization: Bearer <access_token>` header (validated by g
 | Method | Route | Who Can Call |
 |--------|-------|--------------|
 | GET | `/api/v1/orgs/{id}` | admin only |
+| POST | `/api/v1/orgs/{id}/invites` | admin only |
 
 ### Groups
 
@@ -202,3 +208,4 @@ what a user is actually allowed to do.
 | `sqlalchemy` | ORM — Python to SQL |
 | `psycopg2-binary` | PostgreSQL driver |
 | `python-dotenv` | .env file loading |
+| `email-validator` | Required by Pydantic EmailStr in invite schemas |

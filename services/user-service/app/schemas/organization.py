@@ -23,12 +23,12 @@ What is NOT in this file:
     user-service. User-service only reads org data. So there is no create schema here.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 
 
 class OrgResponse(BaseModel):
-    id: UUID
+    org_id: UUID = Field(validation_alias="id")
     name: str
 
     model_config = {"from_attributes": True}

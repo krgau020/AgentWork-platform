@@ -37,7 +37,7 @@ Deployment note:
     every query against the policies table.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 from typing import List
 
@@ -49,7 +49,7 @@ class StatementCreate(BaseModel):
 
 
 class StatementResponse(BaseModel):
-    id: UUID
+    statement_id: UUID = Field(validation_alias="id")
     resource: str
     action: str
     effect: str
@@ -62,7 +62,7 @@ class PolicyCreate(BaseModel):
 
 
 class PolicyResponse(BaseModel):
-    id: UUID
+    policy_id: UUID = Field(validation_alias="id")
     name: str
     org_id: UUID
     statements: List[StatementResponse] = []

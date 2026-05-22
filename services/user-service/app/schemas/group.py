@@ -27,7 +27,7 @@ Deployment note:
     visible to org B even if they share the same group name.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 
 
@@ -36,7 +36,7 @@ class GroupCreate(BaseModel):
 
 
 class GroupResponse(BaseModel):
-    id: UUID
+    group_id: UUID = Field(validation_alias="id")
     name: str
     org_id: UUID
 

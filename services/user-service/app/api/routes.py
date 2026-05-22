@@ -21,6 +21,13 @@ Multi-tenancy:
   Every query includes .filter(...org_id == org_id).
   A user from org A can never see org B's data even if they
   guess the UUID of org B's resource.
+
+Invite flow (Phase 3):
+  POST /api/v1/orgs/{org_id}/invites — admin creates a one-time invite token
+  for a specific email + group. The token is returned in the response.
+  The invitee submits the token to auth-service POST /api/v1/auth/accept-invite.
+  This route uses header_org_id (from x-org-id, set by gateway from JWT) as the
+  authoritative org scope — the path org_id is structural only.
 """
 
 from uuid import UUID
@@ -30,9 +37,10 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.organization import OrgResponse
 from app.schemas.group import GroupCreate, GroupResponse, PolicyAssign
+from app.schemas.invite import InviteCreate, InviteResponse
 from app.schemas.policy import PolicyCreate, PolicyResponse, StatementCreate, StatementResponse
 from app.schemas.user import UserResponse, GroupAssign, UserPoliciesResponse
-from app.services import org_service, group_service, policy_service, user_service
+from app.services import org_service, group_service, invite_service, policy_service, user_service
 
 router = APIRouter()
 
@@ -67,6 +75,26 @@ def get_org(
     return org_service.get_org(db, org_id)
 
 
+@router.post("/api/v1/orgs/{org_id}/invites", response_model=InviteResponse)
+def create_invite(
+    org_id: UUID,
+    body: InviteCreate,
+    db: Session = Depends(get_db),
+    header_org_id: UUID = Depends(get_org_id),
+    _: str = Depends(require_admin),
+):
+    """
+    Create a one-time invite token for a new user.
+
+    The path org_id is for RESTful URL structure. header_org_id (from x-org-id,
+    set by the gateway from the admin's JWT) is used as the authoritative org scope
+    so an admin cannot create invites for a different organization.
+
+    Returns the invite_token the admin must share with the invitee out-of-band.
+    """
+    return invite_service.create_invite(db, header_org_id, body.email, body.group_id)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Groups
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,7 +116,9 @@ def list_groups(
     db: Session = Depends(get_db),
     org_id: UUID = Depends(get_org_id),
 ):
-    return group_service.list_groups(db, org_id, page, limit)
+    result = group_service.list_groups(db, org_id, page, limit)
+    result["data"] = [GroupResponse.model_validate(g).model_dump() for g in result["data"]]
+    return result
 
 
 @router.post("/api/v1/groups/{group_id}/policies")
@@ -136,7 +166,9 @@ def list_policies(
     db: Session = Depends(get_db),
     org_id: UUID = Depends(get_org_id),
 ):
-    return policy_service.list_policies(db, org_id, page, limit)
+    result = policy_service.list_policies(db, org_id, page, limit)
+    result["data"] = [PolicyResponse.model_validate(p).model_dump() for p in result["data"]]
+    return result
 
 
 @router.post("/api/v1/policies/{policy_id}/statements", response_model=StatementResponse)
@@ -173,7 +205,9 @@ def list_users(
     db: Session = Depends(get_db),
     org_id: UUID = Depends(get_org_id),
 ):
-    return user_service.list_users(db, org_id, page, limit)
+    result = user_service.list_users(db, org_id, page, limit)
+    result["data"] = [UserResponse.model_validate(u).model_dump() for u in result["data"]]
+    return result
 
 
 @router.get("/api/v1/users/{user_id}", response_model=UserResponse)
@@ -215,7 +249,8 @@ def get_user_groups(
     db: Session = Depends(get_db),
     org_id: UUID = Depends(get_org_id),
 ):
-    return user_service.get_user_groups(db, user_id, org_id)
+    groups = user_service.get_user_groups(db, user_id, org_id)
+    return [GroupResponse.model_validate(g).model_dump() for g in groups]
 
 
 @router.get("/api/v1/users/{user_id}/policies")

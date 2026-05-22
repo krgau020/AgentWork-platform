@@ -21,14 +21,19 @@ Error handling strategy:
         - timestamp:   UTC ISO 8601 timestamp for log correlation
 
 Endpoints (all prefixed /api/v1/auth by main.py):
-    POST /signup   →  create user + org + default group
-    POST /login    →  verify credentials, return token pair
-    POST /refresh  →  rotate refresh token, return new token pair
-    POST /logout   →  revoke refresh token
+    POST /signup        →  create user + org + default group
+    POST /login         →  verify credentials, return token pair
+    POST /refresh       →  rotate refresh token, return new token pair
+    POST /logout        →  revoke refresh token
+    POST /accept-invite →  accept an invitation, create account, return token pair
+
+    /accept-invite is a PUBLIC route (no JWT required). The invitee has no account
+    yet, so they cannot authenticate. The gateway forwards this without token validation.
+    Security comes from the invite_token being a 256-bit random value stored in the DB.
 
 Dependencies:
-    - app.db.session         →  get_db (database session per request)
-    - app.schemas.user       →  request/response Pydantic models
+    - app.db.session             →  get_db (database session per request)
+    - app.schemas.user           →  request/response Pydantic models
     - app.services.auth_service  →  business logic functions
     - Used by: app.main (router is registered there with prefix /api/v1/auth)
 """
@@ -41,10 +46,11 @@ from datetime import datetime, timezone
 from app.db.session import get_db
 from app.schemas.user import (
     UserCreate, UserLogin, TokenResponse,
-    RefreshTokenRequest, LogoutRequest, RefreshResponse
+    RefreshTokenRequest, LogoutRequest, RefreshResponse,
+    AcceptInviteRequest
 )
 from app.services.auth_service import (
-    create_user, login_user, refresh_access_token, logout_user
+    create_user, login_user, refresh_access_token, logout_user, accept_invite
 )
 
 router = APIRouter()
@@ -157,3 +163,26 @@ def logout(req: LogoutRequest, request: Request, db: Session = Depends(get_db)):
         return {"message": "Logged out successfully"}
     except ValueError:
         return error_response(401, "TOKEN_INVALID", "Token not found or already revoked", request)
+
+
+@router.post("/accept-invite", response_model=TokenResponse)
+def accept_invite_route(req: AcceptInviteRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Accept an invitation and create a new user account.
+
+    PUBLIC endpoint — no JWT required. The invitee has no account yet so they
+    cannot authenticate. Security is provided by the invite_token itself
+    (256-bit random value, one-time use, expires in 7 days).
+
+    On success, the invitation row is deleted and the new user is returned a
+    token pair so they are immediately logged in without a separate /login call.
+
+    Returns:
+        200 with {access_token, refresh_token} on success.
+        400 INVITE_ERROR if the token is invalid, expired, or the email already exists.
+    """
+    try:
+        access_token, refresh_token = accept_invite(db, req.invite_token, req.password)
+        return {"access_token": access_token, "refresh_token": refresh_token}
+    except ValueError as e:
+        return error_response(400, "INVITE_ERROR", str(e), request)

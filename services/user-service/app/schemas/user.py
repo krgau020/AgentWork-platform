@@ -33,13 +33,13 @@ Deployment note:
     role per user; PBAC composes permissions from groups and reusable policies.
 """
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from uuid import UUID
 from typing import List
 
 
 class UserResponse(BaseModel):
-    id: UUID
+    user_id: UUID = Field(validation_alias="id")
     email: str
     org_id: UUID
     is_active: bool

@@ -3,7 +3,7 @@
 -- File: infra/postgres/init.sql
 --
 -- Purpose:
---     Defines all 9 tables for the AgentWork platform database.
+--     Defines all 10 tables for the AgentWork platform database.
 --     This script runs automatically when the PostgreSQL Docker container
 --     starts for the first time (pgdata volume is empty). It is mounted
 --     into /docker-entrypoint-initdb.d/ in docker-compose.yml.
@@ -21,7 +21,8 @@
 --     6. policy_statements     (→ policies)
 --     7. group_policies        (→ groups, policies)
 --     8. user_groups           (→ users, groups)
---     9. service_registry      (no dependencies)
+--     9. invitations           (→ organizations, groups)
+--    10. service_registry      (no dependencies)
 --
 -- Multi-tenancy model:
 --     organizations is the root tenant boundary. Every user, group, and
@@ -163,7 +164,31 @@ CREATE TABLE IF NOT EXISTS user_groups (
 
 
 -- =============================================================================
--- 9. service_registry
+-- 9. invitations
+--    One-time invite tokens created by admins and consumed by new users.
+--    An admin creates an invite for a specific email + group. The invitee
+--    submits the token to POST /api/v1/auth/accept-invite to create their
+--    account and get placed in the target group automatically.
+--
+--    One-time use: the row is deleted by auth-service when the invite is
+--    accepted — a replayed token finds no row and is rejected.
+--    Expiry: expires_at is set 7 days from creation by invite_service.
+--    Cascade: if the org or group is deleted, all their pending invites are
+--    automatically deleted (ON DELETE CASCADE).
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS invitations (
+    id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id      UUID         NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    email       VARCHAR(255) NOT NULL,
+    group_id    UUID         NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    token       TEXT         NOT NULL UNIQUE,
+    expires_at  TIMESTAMPTZ  NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+
+-- =============================================================================
+-- 10. service_registry
 --    Registry of solution microservices plugged into the platform.
 --    The gateway reads this table to know which URL to proxy requests to
 --    and which groups are allowed to access each service.
