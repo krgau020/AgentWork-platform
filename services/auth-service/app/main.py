@@ -56,7 +56,7 @@ from app.db.session import engine
 
 # Import all models so SQLAlchemy registers them in Base.metadata.
 # Do not remove these — they are needed for FK resolution even if unused here.
-from app.models import user, token, organization, group, user_group
+from app.models import user, token, organization, group, user_group, invitation
 
 log = logging.getLogger("auth-service")
 

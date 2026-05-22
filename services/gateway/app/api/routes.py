@@ -8,11 +8,18 @@ Purpose:
 Route categories:
 
     Public routes — no JWT required, forwarded to auth-service:
-        POST /api/v1/auth/signup   → auth-service /api/v1/auth/signup
-        POST /api/v1/auth/login    → auth-service /api/v1/auth/login
-        POST /api/v1/auth/refresh  → auth-service /api/v1/auth/refresh
-        POST /api/v1/auth/logout   → auth-service /api/v1/auth/logout
-        GET  /health               → gateway responds directly
+        POST /api/v1/auth/signup        → auth-service /api/v1/auth/signup
+        POST /api/v1/auth/login         → auth-service /api/v1/auth/login
+        POST /api/v1/auth/refresh       → auth-service /api/v1/auth/refresh
+        POST /api/v1/auth/logout        → auth-service /api/v1/auth/logout
+        POST /api/v1/auth/accept-invite → auth-service /api/v1/auth/accept-invite
+        GET  /health                    → gateway responds directly
+
+    /accept-invite is public because the invitee has no account yet and cannot
+    present a JWT. Security comes from the invite_token being a 256-bit random
+    value (secrets.token_urlsafe(32)) stored in the DB with a 7-day expiry.
+    FastAPI route ordering matters: /accept-invite must be registered BEFORE the
+    generic /api/v1/auth/{path:path} catch-all (if one existed) so it matches first.
 
     Protected routes — JWT required, forwarded to user-service:
         /api/v1/orgs/*     → user-service (after token validation + headers)
@@ -153,6 +160,11 @@ async def refresh(request: Request):
 @router.post("/api/v1/auth/logout")
 async def logout(request: Request):
     return await _forward(request, f"{settings.AUTH_SERVICE_URL}/api/v1/auth/logout")
+
+
+@router.post("/api/v1/auth/accept-invite")
+async def accept_invite(request: Request):
+    return await _forward(request, f"{settings.AUTH_SERVICE_URL}/api/v1/auth/accept-invite")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

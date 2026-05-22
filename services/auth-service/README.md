@@ -73,16 +73,17 @@ services/auth-service/
     │   ├── token.py            → tokens table (refresh token store)
     │   ├── organization.py     → organizations table
     │   ├── group.py            → groups table
-    │   └── user_group.py       → user_groups join table
+    │   ├── user_group.py       → user_groups join table
+    │   └── invitation.py       → invitations table (read + delete on accept)
     │
     ├── schemas/
     │   └── user.py             Pydantic schemas — request/response shape + validation
     │                           UserCreate, UserLogin, TokenResponse, RefreshResponse,
-    │                           RefreshTokenRequest, LogoutRequest
+    │                           RefreshTokenRequest, LogoutRequest, AcceptInviteRequest
     │
     └── services/
         └── auth_service.py     All business logic: create_user, login_user,
-                                refresh_access_token, logout_user
+                                refresh_access_token, logout_user, accept_invite
 ```
 
 ---
@@ -140,7 +141,7 @@ GET http://localhost:8001/health
 
 ## 5. API Reference
 
-All endpoints are prefixed with `/api/v1/auth`.
+All endpoints are prefixed with `/api/v1/auth`. All endpoints are public (no JWT required) — the gateway forwards `/api/v1/auth/*` without token validation.
 
 ### POST `/api/v1/auth/signup`
 
@@ -253,6 +254,39 @@ Revoke a refresh token. The token is deleted from the database and cannot be use
 | Status | error_code    | Reason |
 |--------|---------------|--------|
 | 401    | TOKEN_INVALID | Token not found or already revoked |
+
+---
+
+### POST `/api/v1/auth/accept-invite`
+
+Accept an invitation and create a new user account. **No JWT required** — the invitee has no account yet. Security comes from the `invite_token` being a 256-bit random one-time value that expires in 7 days.
+
+On success: the invitation row is deleted (one-time use), the new user account is created, and a token pair is returned so the user is immediately logged in.
+
+**Request body:**
+```json
+{
+  "invite_token": "ud3xMKJYuSsf568QdbZrmvevvVCYeLxNCdJlAn0XeVw",
+  "password": "NewUser@1234"
+}
+```
+
+**Success — 200:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Error responses:**
+
+| Status | error_code   | Reason |
+|--------|--------------|--------|
+| 400    | INVITE_ERROR | Token not found or already used |
+| 400    | INVITE_ERROR | Token has expired (older than 7 days) |
+| 400    | INVITE_ERROR | Email already has an account — log in instead |
+| 400    | INVITE_ERROR | Password does not meet policy |
 
 ---
 
@@ -413,15 +447,16 @@ A stolen refresh token can only be used once — the legitimate user's next refr
 
 The auth service reads and writes these tables (all defined in `infra/postgres/init.sql`):
 
-| Table           | Operations            | Purpose                                              |
-|-----------------|-----------------------|------------------------------------------------------|
-| `organizations` | INSERT, SELECT        | Create org on signup, check slug uniqueness          |
-| `users`         | INSERT, SELECT        | Create user, look up by email on login               |
-| `tokens`        | INSERT, SELECT, DELETE| Store refresh token, rotation, logout/revocation     |
-| `groups`        | INSERT, SELECT        | Create default admin group on signup, resolve on login|
-| `user_groups`   | INSERT, SELECT        | Assign user to group on signup, resolve groups on login|
+| Table           | Operations              | Purpose                                               |
+|-----------------|-------------------------|-------------------------------------------------------|
+| `organizations` | INSERT, SELECT          | Create org on signup, check slug uniqueness           |
+| `users`         | INSERT, SELECT          | Create user, look up by email on login / accept-invite|
+| `tokens`        | INSERT, SELECT, DELETE  | Store refresh token, rotation, logout/revocation      |
+| `groups`        | INSERT, SELECT          | Create default admin group on signup, resolve on login|
+| `user_groups`   | INSERT, SELECT          | Assign user to group on signup, resolve groups        |
+| `invitations`   | SELECT, DELETE          | Read invite by token, delete after acceptance         |
 
-The auth service does **not** manage `policies`, `policy_statements`, or `group_policies` — those are owned by the user-service.
+The auth service does **not** manage `policies`, `policy_statements`, `group_policies`, or `invitations` (INSERT) — those are owned by the user-service.
 
 ---
 

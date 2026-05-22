@@ -39,6 +39,15 @@ Logout flow (logout_user):
     1. Find the refresh token row in the tokens table
     2. Delete it — token is now revoked, cannot be used again
 
+Accept-invite flow (accept_invite) — Phase 3:
+    1. Look up the Invitation row by token value
+    2. Check that expires_at is still in the future
+    3. Validate no existing user has the invite's email
+    4. Create User row with hashed password + org_id from the invitation
+    5. Create UserGroup row to place the user in the invited group
+    6. Delete the Invitation row (one-time use — cannot be replayed)
+    7. Issue a token pair so the user is immediately logged in after accepting
+
 Design decisions:
     - db.flush() is used between inserts in create_user so each row gets its
       DB-assigned UUID before the next row references it as a FK — but no
@@ -48,19 +57,26 @@ Design decisions:
       rotation without requiring a logout.
     - Email is used as the JWT subject ("sub") rather than user ID. This is
       readable for debugging. If email ever becomes mutable, switch sub to user ID.
+    - accept_invite deletes the invitation row in the same transaction as user
+      creation. If user creation fails (e.g. duplicate email), the invite is NOT
+      deleted — the admin can share it again or the invitee can retry.
 
 Dependencies:
-    - app.models.*          →  ORM models (User, Token, Organization, Group, UserGroup)
+    - app.models.*          →  ORM models (User, Token, Organization, Group, UserGroup, Invitation)
     - app.core.security     →  hash_password, verify_password, create_*_token, decode_token
     - Used by: app.api.routes
 """
 
 import re
+from datetime import datetime, timezone
+
 from sqlalchemy.orm import Session
-from app.models.user import User
-from app.models.token import Token
-from app.models.organization import Organization
+
 from app.models.group import Group
+from app.models.invitation import Invitation
+from app.models.organization import Organization
+from app.models.token import Token
+from app.models.user import User
 from app.models.user_group import UserGroup
 from app.core.security import (
     hash_password,
@@ -270,3 +286,71 @@ def logout_user(db: Session, refresh_token: str):
 
     db.delete(token_entry)
     db.commit()
+
+
+def accept_invite(db: Session, invite_token: str, password: str):
+    """
+    Accept an invitation and create a new user account.
+
+    Looks up the invitation by token, validates it, creates the user in the
+    invited organization, places them in the invited group, deletes the
+    invitation (one-time use), and immediately returns a token pair so the
+    user is logged in without a separate login call.
+
+    The invitation is only deleted if user creation succeeds. If creation
+    fails (e.g. duplicate email), the invitation remains valid and the
+    invitee can retry after resolving the error.
+
+    Args:
+        db:           Active database session.
+        invite_token: The opaque token string from the invitation.
+        password:     The new user's chosen password (plain text — will be hashed).
+
+    Returns:
+        Tuple (access_token, refresh_token) on success.
+
+    Raises:
+        ValueError: If the token does not exist (invalid or already used).
+        ValueError: If the token has expired (expires_at < now).
+        ValueError: If a user with the invitation's email already exists.
+        ValueError: If the password does not meet the password policy.
+    """
+    invite = db.query(Invitation).filter(Invitation.token == invite_token).first()
+    if not invite:
+        raise ValueError("Invite token is invalid or has already been used")
+
+    if invite.expires_at < datetime.now(timezone.utc):
+        db.delete(invite)
+        db.commit()
+        raise ValueError("Invite token has expired")
+
+    if db.query(User).filter(User.email == invite.email).first():
+        raise ValueError("An account with this email already exists")
+
+    user = User(
+        email=invite.email,
+        password=hash_password(password),
+        org_id=invite.org_id,
+    )
+    db.add(user)
+    db.flush()
+
+    db.add(UserGroup(user_id=user.id, group_id=invite.group_id))
+    db.delete(invite)
+    db.commit()
+    db.refresh(user)
+
+    groups = _get_user_groups(db, user.id)
+    payload = {
+        "sub":    user.email,
+        "org_id": str(user.org_id),
+        "groups": groups,
+    }
+
+    access_token = create_access_token(payload)
+    refresh_token = create_refresh_token({"sub": user.email})
+
+    db.add(Token(user_id=user.id, refresh_token=refresh_token))
+    db.commit()
+
+    return access_token, refresh_token

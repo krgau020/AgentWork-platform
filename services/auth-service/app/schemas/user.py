@@ -18,12 +18,13 @@ Role in the system:
     error message.
 
 Schema map:
-    UserCreate          →  POST /signup body
-    UserLogin           →  POST /login body
-    TokenResponse       →  POST /login response
-    RefreshTokenRequest →  POST /refresh body
-    RefreshResponse     →  POST /refresh response
-    LogoutRequest       →  POST /logout body
+    UserCreate           →  POST /signup body
+    UserLogin            →  POST /login body
+    TokenResponse        →  POST /login response
+    RefreshTokenRequest  →  POST /refresh body
+    RefreshResponse      →  POST /refresh response
+    LogoutRequest        →  POST /logout body
+    AcceptInviteRequest  →  POST /accept-invite body
 
 Dependencies:
     - pydantic.BaseModel   →  base class for all schemas
@@ -113,3 +114,22 @@ class LogoutRequest(BaseModel):
                        token cannot be used to obtain new access tokens.
     """
     refresh_token: str
+
+
+class AcceptInviteRequest(BaseModel):
+    """
+    Body for POST /accept-invite.
+
+    Used by an invitee who received an invite_token from an admin.
+    The token identifies the invitation record (org, group, email).
+    The password is the new account's password — it must satisfy the
+    password policy (min 8 chars, upper, lower, digit, special character).
+
+    Fields:
+        invite_token: The opaque token string returned when the admin created
+                      the invite. NOT a JWT — looked up by value in the DB.
+        password:     The new user's chosen password (plain text in transit;
+                      hashed with Argon2 before storage).
+    """
+    invite_token: str
+    password: str
