@@ -21,8 +21,8 @@ Route categories:
     FastAPI route ordering matters: /accept-invite must be registered BEFORE the
     generic /api/v1/auth/{path:path} catch-all (if one existed) so it matches first.
 
-    Protected routes — JWT required, forwarded to user-service:
-        /api/v1/orgs/*     → user-service (after token validation + headers)
+    Protected routes — JWT required + rate limited, forwarded to user-service:
+        /api/v1/orgs/*     → user-service (after token validation + rate check + headers)
         /api/v1/users/*    → user-service
         /api/v1/groups/*   → user-service
         /api/v1/policies/* → user-service
@@ -68,6 +68,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.rate_limiter import rate_limit
 from app.core.security import get_token_payload
 
 router = APIRouter()
@@ -95,7 +96,10 @@ async def _forward(request: Request, url: str, extra_headers: dict = None) -> JS
     if request.query_params:
         url = f"{url}?{request.query_params}"
 
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "x-request-id": getattr(request.state, "request_id", ""),
+    }
     if extra_headers:
         headers.update(extra_headers)
 
@@ -180,46 +184,46 @@ async def accept_invite(request: Request):
 # ── Organizations ────────────────────────────────────────────────────────────
 
 @router.api_route("/api/v1/orgs", methods=["GET", "POST"])
-async def orgs(request: Request, payload: dict = Depends(get_token_payload)):
+async def orgs(request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 @router.api_route("/api/v1/orgs/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def orgs_detail(path: str, request: Request, payload: dict = Depends(get_token_payload)):
+async def orgs_detail(path: str, request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 # ── Users ────────────────────────────────────────────────────────────────────
 
 @router.api_route("/api/v1/users", methods=["GET", "POST"])
-async def users(request: Request, payload: dict = Depends(get_token_payload)):
+async def users(request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 @router.api_route("/api/v1/users/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def users_detail(path: str, request: Request, payload: dict = Depends(get_token_payload)):
+async def users_detail(path: str, request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 # ── Groups ───────────────────────────────────────────────────────────────────
 
 @router.api_route("/api/v1/groups", methods=["GET", "POST"])
-async def groups(request: Request, payload: dict = Depends(get_token_payload)):
+async def groups(request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 @router.api_route("/api/v1/groups/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def groups_detail(path: str, request: Request, payload: dict = Depends(get_token_payload)):
+async def groups_detail(path: str, request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 # ── Policies ─────────────────────────────────────────────────────────────────
 
 @router.api_route("/api/v1/policies", methods=["GET", "POST"])
-async def policies(request: Request, payload: dict = Depends(get_token_payload)):
+async def policies(request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
 
 
 @router.api_route("/api/v1/policies/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def policies_detail(path: str, request: Request, payload: dict = Depends(get_token_payload)):
+async def policies_detail(path: str, request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))

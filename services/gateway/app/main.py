@@ -44,7 +44,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
+from app.core.logging import configure_logging
 from app.core.middleware import RequestIDMiddleware
+
+configure_logging("gateway")
 
 app = FastAPI(title="AgentWork Gateway", version="1.0.0")
 

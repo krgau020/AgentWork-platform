@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     AUTH_SERVICE_URL: str
     USER_SERVICE_URL: str
+    REDIS_URL: str = "redis://redis:6379"
 
     class Config:
         env_file = ".env"

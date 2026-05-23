@@ -46,11 +46,14 @@ Dependencies:
     - app.models.*     →  imported for side-effect registration with Base
 """
 
-from fastapi import FastAPI
-import time
 import logging
+import time
+
+from fastapi import FastAPI
 from sqlalchemy import text
+
 from app.api.routes import router
+from app.core.logging import LoggingMiddleware, configure_logging
 from app.db.base import Base
 from app.db.session import engine
 
@@ -58,9 +61,11 @@ from app.db.session import engine
 # Do not remove these — they are needed for FK resolution even if unused here.
 from app.models import user, token, organization, group, user_group, invitation
 
+configure_logging("auth-service")
 log = logging.getLogger("auth-service")
 
 app = FastAPI(title="Auth Service")
+app.add_middleware(LoggingMiddleware)
 
 app.include_router(router, prefix="/api/v1/auth", tags=["Auth"])
 

@@ -34,6 +34,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
+from app.core.cache import get_policy_cache, invalidate_policy_cache, set_policy_cache
 from app.db.session import get_db
 from app.schemas.organization import OrgResponse
 from app.schemas.group import GroupCreate, GroupResponse, PolicyAssign
@@ -220,7 +221,7 @@ def get_user(
 
 
 @router.post("/api/v1/users/{user_id}/groups")
-def add_user_to_group(
+async def add_user_to_group(
     user_id: UUID,
     body: GroupAssign,
     db: Session = Depends(get_db),
@@ -228,11 +229,12 @@ def add_user_to_group(
     _: str = Depends(require_admin),
 ):
     group_service.add_user_to_group(db, user_id, body.group_id, org_id)
+    await invalidate_policy_cache(str(user_id))
     return {"message": "User added to group"}
 
 
 @router.delete("/api/v1/users/{user_id}/groups/{group_id}")
-def remove_user_from_group(
+async def remove_user_from_group(
     user_id: UUID,
     group_id: UUID,
     db: Session = Depends(get_db),
@@ -240,6 +242,7 @@ def remove_user_from_group(
     _: str = Depends(require_admin),
 ):
     group_service.remove_user_from_group(db, user_id, group_id, org_id)
+    await invalidate_policy_cache(str(user_id))
     return {"message": "User removed from group"}
 
 
@@ -254,10 +257,14 @@ def get_user_groups(
 
 
 @router.get("/api/v1/users/{user_id}/policies")
-def get_user_policies(
+async def get_user_policies(
     user_id: UUID,
     db: Session = Depends(get_db),
     org_id: UUID = Depends(get_org_id),
 ):
+    cached = await get_policy_cache(str(user_id))
+    if cached is not None:
+        return {"user_id": str(user_id), "policies": cached, "from_cache": True}
     policies = user_service.get_user_policies(db, user_id, org_id)
-    return {"user_id": str(user_id), "policies": policies}
+    await set_policy_cache(str(user_id), policies)
+    return {"user_id": str(user_id), "policies": policies, "from_cache": False}
