@@ -79,9 +79,9 @@ invitations         → one-time invite tokens for adding users to an org (Phase
 service_registry    → registered solution microservices and routing config
 ```
 
-Schema is defined in `infra/postgres/init.sql` and runs automatically on first PostgreSQL container start.
+Schema is managed by **Alembic migrations** in `services/auth-service/alembic/versions/`. On every auth-service startup, `alembic upgrade head` runs automatically — safe to call repeatedly (uses `IF NOT EXISTS`, tracked in `alembic_version` table).
 
-> **Note:** If you add a table, run `docker compose down -v && docker compose up --build` to recreate the volume and apply the new schema.
+`infra/postgres/init.sql` still initialises the DB on the first container start. Alembic and init.sql are kept in sync — adding a new table means adding both a migration file and updating init.sql.
 
 ---
 
@@ -259,15 +259,24 @@ All services return errors in this format:
 
 ## Implementation Phases
 
-| Phase | Goal                                                         | Status           |
-|-------|--------------------------------------------------------------|------------------|
-| 1     | Core auth — signup, login, refresh, logout, JWT              | **Done**         |
-| 2     | PBAC — orgs, groups, policies, user-group management         | **Done**         |
-| 3     | Invite flow — admin invites users into an org + group        | **Done**         |
-| 4     | Platform hardening — Redis rate limiting, policy cache, logs | Not started      |
-| 5     | Service registry — dynamic gateway routing from DB           | Not started      |
-| 6     | Frontend — Next.js admin UI                                  | Not started      |
-| 7     | First solution integration                                   | Not started      |
+| Phase | Goal                                                                      | Status           |
+|-------|---------------------------------------------------------------------------|------------------|
+| 1     | Core auth — signup, login, refresh, logout, JWT                           | **Done**         |
+| 2     | PBAC — orgs, groups, policies, user-group management                      | **Done**         |
+| 3     | Invite flow — admin invites users into an org + group                     | **Done**         |
+| 4     | Platform hardening — rate limiting, policy cache, JSON logging, migrations | **Done**         |
+| 5     | Service registry — dynamic gateway routing from DB                        | Not started      |
+| 6     | Frontend — Next.js admin UI                                               | Not started      |
+| 7     | First solution integration                                                | Not started      |
+
+### Phase 4 Details
+
+| Feature | Service | What it does |
+|---|---|---|
+| Redis rate limiting | gateway | 1000 req/min per org, `ratelimit:{org_id}` key, 60s sliding window, fail-open |
+| Policy cache | user-service | `policy:{user_id}` key, 300s TTL, invalidated on group membership change |
+| Structured JSON logging | all 3 services | Every request logged as one JSON line with `timestamp`, `level`, `service`, `request_id`, `method`, `path`, `status`, `duration_ms` |
+| Alembic migrations | auth-service | Versioned schema management — `alembic upgrade head` runs at every startup, tracks applied migrations in `alembic_version` |
 
 ---
 
@@ -283,6 +292,7 @@ Step-by-step build notes live in [architecture_steps_info/project-setup/](archit
 | `4.gateway-service.md` + `4a` + `4b` | Gateway reference, testing, concepts |
 | `5.user-service.md` + `5a` + `5b` | User service reference, testing, concepts |
 | `6.invite-flow.md` + `6a` + `6b` | Invite flow reference, testing, concepts |
+| `7.platform-hardening.md` + `7a` + `7b` | Phase 4: rate limiting, policy cache, JSON logging, Alembic |
 | `PBAC-understanding.md` | Deep dive: PBAC vs RBAC, permission model |
 
 ---

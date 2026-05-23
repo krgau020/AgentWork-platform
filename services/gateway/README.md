@@ -191,3 +191,40 @@ Gateway returns response to client
 | `python-jose[cryptography]` | JWT decode and verification |
 | `httpx` | Async HTTP client for forwarding requests |
 | `python-dotenv` | .env file loading |
+| `redis` | Redis client — rate limiting counters |
+
+---
+
+## Phase 4 — What Changed (Platform Hardening)
+
+### Redis Rate Limiting (Point 1)
+
+All 8 protected routes now enforce a rate limit: **1000 requests per org per 60 seconds**.
+
+**How it works:**
+- Dependency: `rate_limit` (wraps `get_token_payload`)
+- Redis key: `ratelimit:{org_id}` — one counter per organization
+- Each request: INCR counter, set 60s TTL (both in one pipeline round-trip)
+- If counter > 1000: 429 Too Many Requests
+- If Redis is down: **fail-open** — request is allowed, warning logged
+
+```bash
+# Check rate limit counter in Redis:
+docker exec -it agentwork_redis redis-cli
+> KEYS ratelimit:*
+> GET ratelimit:<org_id>
+```
+
+### Structured JSON Logging (Point 3)
+
+Every request logged as one JSON line with: `timestamp`, `service`, `level`, `message`, `method`, `path`, `status`, `duration_ms`, `request_id`.
+
+The gateway generates a UUID `request_id` per request and:
+1. Attaches it to all outbound forwarded requests as `x-request-id` header (public + protected routes)
+2. Returns it in the response as `x-request-id` header
+3. Logs it so all 3 services share the same ID for one client request
+
+```bash
+# View structured logs:
+docker compose logs gateway | Select-String '"message"'
+```

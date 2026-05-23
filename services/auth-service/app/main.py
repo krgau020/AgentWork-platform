@@ -46,11 +46,14 @@ Dependencies:
     - app.models.*     →  imported for side-effect registration with Base
 """
 
-from fastapi import FastAPI
-import time
 import logging
+import time
+
+from fastapi import FastAPI
 from sqlalchemy import text
+
 from app.api.routes import router
+from app.core.logging import LoggingMiddleware, configure_logging
 from app.db.base import Base
 from app.db.session import engine
 
@@ -58,9 +61,11 @@ from app.db.session import engine
 # Do not remove these — they are needed for FK resolution even if unused here.
 from app.models import user, token, organization, group, user_group, invitation
 
+configure_logging("auth-service")
 log = logging.getLogger("auth-service")
 
 app = FastAPI(title="Auth Service")
+app.add_middleware(LoggingMiddleware)
 
 app.include_router(router, prefix="/api/v1/auth", tags=["Auth"])
 
@@ -116,13 +121,36 @@ def wait_for_db(connectable, retries: int = 10, delay: int = 2) -> bool:
     raise RuntimeError("Database not available after retries")
 
 
+def run_migrations() -> None:
+    """
+    Apply all pending Alembic migrations at startup.
+
+    Reads alembic.ini from the service root (/app/alembic.ini inside Docker).
+    The alembic/env.py picks up POSTGRES_* env vars to build the DB URL so
+    no hardcoded credentials are needed here.
+
+    Safe to run on every startup — migration 0001 uses IF NOT EXISTS so it
+    is a no-op if tables already exist (e.g. created by init.sql).
+    """
+    from alembic.config import Config
+    from alembic import command as alembic_command
+
+    alembic_cfg = Config("alembic.ini")
+    alembic_command.upgrade(alembic_cfg, "head")
+    log.info("Alembic migrations applied successfully")
+
+
 @app.on_event("startup")
 def on_startup():
     """
     Run on service startup before accepting any requests.
 
-    Waits for the PostgreSQL database to be ready. If the DB is not
-    reachable after all retries, the service exits with a RuntimeError,
-    which causes the container to restart (as configured in docker-compose).
+    1. Waits for the PostgreSQL database to be ready.
+    2. Applies any pending Alembic migrations (idempotent — safe on every restart).
+
+    If the DB is not reachable after all retries, the service exits with a
+    RuntimeError, which causes the container to restart (as configured in
+    docker-compose).
     """
     wait_for_db(engine, retries=10, delay=2)
+    run_migrations()

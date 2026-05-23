@@ -8,6 +8,7 @@ One difference: no JWT logic anywhere in this service.
 The gateway already validated the token before this service sees any request.
 """
 
+import logging
 import time
 from datetime import datetime, timezone
 
@@ -16,9 +17,14 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.api.routes import router
+from app.core.logging import LoggingMiddleware, configure_logging
 from app.db.session import engine
 
+configure_logging("user-service")
+log = logging.getLogger("user-service")
+
 app = FastAPI(title="AgentWork User Service", version="1.0.0")
+app.add_middleware(LoggingMiddleware)
 
 
 @app.exception_handler(HTTPException)
@@ -38,14 +44,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 
 
 def wait_for_db(retries: int = 10, delay: int = 2):
-    for attempt in range(retries):
+    for attempt in range(1, retries + 1):
         try:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            print("Database is available")
+            log.info("Database is available")
             return
-        except Exception:
-            print(f"DB not ready, retrying ({attempt + 1}/{retries})...")
+        except Exception as exc:
+            log.warning("DB not ready (attempt %d/%d): %s", attempt, retries, exc)
             time.sleep(delay)
     raise RuntimeError("Database did not become available")
 

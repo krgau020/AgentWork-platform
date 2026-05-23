@@ -209,3 +209,36 @@ what a user is actually allowed to do.
 | `psycopg2-binary` | PostgreSQL driver |
 | `python-dotenv` | .env file loading |
 | `email-validator` | Required by Pydantic EmailStr in invite schemas |
+| `redis` | Redis client — policy cache |
+
+---
+
+## Phase 4 — What Changed (Platform Hardening)
+
+### Policy Cache (Point 2)
+
+`GET /api/v1/users/{user_id}/policies` now caches results in Redis.
+
+**Cache key:** `policy:{user_id}` | **TTL:** 300 seconds (5 minutes)
+
+**Flow:**
+```
+Request → Redis GET policy:{user_id}
+    HIT  → return cached JSON immediately (from_cache: true)
+    MISS → query DB → write to Redis → return (from_cache: false)
+```
+
+**Invalidation:** When a user is added to or removed from a group (`POST/DELETE /api/v1/users/{id}/groups`), the cache key for that user is deleted immediately so the next policies call reflects the new membership.
+
+Fail-open: if Redis is unavailable, the DB query runs normally — no error returned to the client.
+
+### Structured JSON Logging (Point 3)
+
+Every request logged as one JSON line with: `timestamp`, `service`, `level`, `message`, `method`, `path`, `status`, `duration_ms`, `request_id`.
+
+The `request_id` from the gateway's `x-request-id` header is read and logged, enabling cross-service correlation:
+
+```bash
+# Find all logs for one request across services:
+docker compose logs | Select-String "<request_id>"
+```

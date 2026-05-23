@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str
     POSTGRES_HOST: str = "postgres"
     POSTGRES_PORT: int = 5432
+    REDIS_URL: str = "redis://redis:6379"
 
     @property
     def DATABASE_URL(self) -> str:

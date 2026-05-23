@@ -98,6 +98,7 @@ services:
       - POSTGRES_DB=agentwork
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
       - AUTH_SERVICE_URL=http://auth-service:8001
       - USER_SERVICE_URL=http://user-service:8003
     ports:
@@ -167,10 +168,12 @@ services:
       - POSTGRES_USER=admin
       - POSTGRES_PASSWORD=admin
       - POSTGRES_DB=agentwork
+      - REDIS_URL=redis://redis:6379
     ports:
       - "8003:8003"
     depends_on:
       - postgres
+      - redis
     volumes:
       - ./services/user-service:/app
     networks:
