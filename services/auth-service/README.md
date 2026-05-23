@@ -507,3 +507,44 @@ After signup, check `organizations`, `users`, `groups`, and `user_groups` — ea
 | `python-jose`       | JWT creation and validation (HS256)                  |
 | `python-dotenv`     | Load `.env` file in local dev                        |
 | `email-validator`   | Required by Pydantic's `EmailStr` for email validation|
+| `alembic`           | Versioned database migrations — runs at startup      |
+
+---
+
+## Phase 4 — What Changed (Platform Hardening)
+
+### Alembic Migrations
+
+Database schema is now managed by versioned Alembic migrations instead of being applied only through `init.sql`.
+
+**Files added:**
+- `alembic.ini` — Alembic config, points to `alembic/` folder
+- `alembic/env.py` — reads `POSTGRES_*` env vars to connect to DB
+- `alembic/versions/0001_initial_schema.py` — creates all 10 tables with `IF NOT EXISTS`
+
+**Startup sequence:**
+```
+wait_for_db()       ← polls DB until ready
+     ↓
+run_migrations()    ← alembic upgrade head (idempotent)
+     ↓
+FastAPI ready
+```
+
+`alembic upgrade head` is called every restart. It checks `alembic_version` and only applies unapplied migrations. If nothing is new, it's a no-op.
+
+```bash
+# Verify migration applied:
+docker exec agentwork_postgres psql -U admin -d agentwork -c "SELECT * FROM alembic_version;"
+# → 0001
+```
+
+### Structured JSON Logging (Phase 4 — Point 3)
+
+Every request is logged as a single JSON line:
+```json
+{"timestamp": "...", "service": "auth-service", "level": "INFO", "message": "request",
+ "method": "POST", "path": "/api/v1/auth/login", "status": 200, "duration_ms": 45, "request_id": "..."}
+```
+
+The `request_id` comes from the gateway's `x-request-id` header — correlates logs across all 3 services for one client request.

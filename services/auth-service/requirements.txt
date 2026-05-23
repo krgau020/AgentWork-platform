@@ -17,3 +17,6 @@ python-dotenv
 
 # Email format validation for Pydantic EmailStr fields
 email-validator
+
+# Database migration versioning
+alembic
