@@ -79,6 +79,20 @@ At login, the auth service resolves the user's groups and embeds them in the JWT
 
 ---
 
+## Prerequisites
+
+| Requirement        | Minimum Version | Notes                                                      |
+|--------------------|-----------------|-----------------------------------------------------------|
+| Docker Desktop     | 4.x             | Engine + Compose included                                  |
+| Docker Compose     | v2 (bundled)    | Use `docker compose` (v2 syntax), not `docker-compose`    |
+| Node.js            | 18.x            | Only if running frontend outside Docker (`npm run dev`)   |
+| npm                | 9.x             | Comes with Node.js                                        |
+| Free ports         | 3000, 8000–8003 | Make sure nothing else is listening on these ports        |
+
+**You do NOT need Python, PostgreSQL, or Redis installed locally** — they run inside Docker containers.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -119,6 +133,137 @@ http://localhost:3000/signup   →  create a new org + admin account
 http://localhost:3000/invite   →  accept an invite token (from ?token= query param)
 http://localhost:3000/dashboard →  admin dashboard (requires login)
 ```
+
+---
+
+## First-Time Setup Walkthrough
+
+After `docker compose up --build`, follow these steps to go from zero to a running platform with users, policies, and a connected AI solution.
+
+### Step 1 — Create your organization
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@acme.com", "password": "Admin@1234", "org_name": "Acme Corp"}'
+# → {"message": "User created successfully"}
+```
+
+This creates four records atomically: organization, user, admin group, and group membership. The first user in any org is always an admin.
+
+### Step 2 — Log in and get your tokens
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@acme.com", "password": "Admin@1234"}'
+# → {"access_token": "eyJhbGc...", "refresh_token": "eyJhbGc..."}
+
+export ACCESS_TOKEN="eyJhbGc..."   # paste your token here
+export REFRESH_TOKEN="eyJhbGc..."  # paste your refresh token here
+```
+
+### Step 3 — Get your org ID
+
+The org ID is embedded in your JWT. Decode it:
+
+```bash
+# Print the JWT payload (base64url decode the middle section)
+echo $ACCESS_TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | python -m json.tool
+# → {"sub": "admin@acme.com", "org_id": "...", "groups": ["admin"], "exp": ...}
+
+export ORG_ID="<paste org_id from above>"
+```
+
+Or open `http://localhost:3000/dashboard` — your org ID appears in the session card.
+
+### Step 4 — Create a group
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/groups \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "developer"}'
+# → {"group_id": "...", "name": "developer", "org_id": "..."}
+
+export GROUP_ID="<paste group_id>"
+```
+
+### Step 5 — Create a policy and add a permission statement
+
+```bash
+# Create the policy
+curl -s -X POST http://localhost:8000/api/v1/policies \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "read-only"}'
+# → {"policy_id": "...", "name": "read-only", ...}
+
+export POLICY_ID="<paste policy_id>"
+
+# Add a permission statement to it
+curl -s -X POST http://localhost:8000/api/v1/policies/$POLICY_ID/statements \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"resource": "documents", "action": "read", "effect": "allow"}'
+```
+
+### Step 6 — Assign the policy to the group
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/groups/$GROUP_ID/policies \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"policy_id": "'$POLICY_ID'"}'
+```
+
+### Step 7 — Invite a team member
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/orgs/$ORG_ID/invites \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "dev@acme.com", "group_id": "'$GROUP_ID'"}'
+# → {"invite_token": "...", "expires_at": "..."}
+```
+
+Share the `invite_token` with your team member. They visit:
+
+```
+http://localhost:3000/invite?token=<invite_token>
+```
+
+They set a password and land on the dashboard — already in your org and developer group.
+
+### Step 8 — Register a solution (requires solution service running)
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/registry/register \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "chatbot",
+    "display_name": "AI Chatbot",
+    "base_url": "http://chatbot:8004",
+    "route_prefix": "/chat",
+    "allowed_groups": ["*"],
+    "health_endpoint": "/health"
+  }'
+```
+
+The solution now appears in the dashboard solutions sidebar for all users.
+
+### Step 9 — Chat with the solution
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/solutions/chatbot/chat \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello! What can you help me with?"}'
+# → {"reply": "..."}
+```
+
+Or open `http://localhost:3000/dashboard/solutions` and use the chat UI.
 
 ---
 
@@ -477,60 +622,187 @@ Step-by-step build notes in [architecture_steps_info/project-setup/](architectur
 
 ## Adding a Solution Microservice
 
-Solutions live in separate repos and are registered by an admin — they never register themselves. Think of it like Netflix: you open the platform and see the catalog, then pick a solution.
+Solutions live in separate repos and are registered by an admin — they never register themselves. Think of it like a plugin registry: you build the plugin, then register it once and it appears in the platform for all users.
 
-### Developer steps (building the solution)
+### Concept
 
-1. Create a FastAPI (or any HTTP) service with two endpoints:
-   - `POST /chat` — accepts `{ "message": "..." }`, returns `{ "reply": "..." }`
-   - `GET /health` — returns `{ "status": "ok" }`
-2. Add a `docker-compose.yml` that joins the `agentwork-platform` external network:
-   ```yaml
-   networks:
-     agentwork-platform:
-       external: true
-   ```
-3. Start the solution: `docker compose up --build`
-
-### Admin steps (registering the solution in the platform)
-
-Once the solution is running, an admin registers it via the platform API:
-
-```http
-POST http://localhost:8000/api/v1/registry/register
-Authorization: Bearer <admin_access_token>
-
-{
-  "name":           "chatbot",
-  "display_name":   "AI Chatbot",
-  "base_url":       "http://chatbot:8004",
-  "route_prefix":   "/chat",
-  "allowed_groups": ["*"],
-  "health_endpoint": "/health"
-}
+```
+[Your Solution Repo]           [AgentWork Platform]
+  ├── Dockerfile          →    API Gateway at :8000
+  ├── docker-compose.yml       resolves "chatbot" → base_url
+  └── app/                     forwards request + identity headers
+      ├── main.py              ↓
+      └── routes.py        [Your Solution Service]
+          POST /chat            reads x-org-id, x-user-email
+          GET  /health          responds with { "reply": "..." }
 ```
 
-After registration, users can send messages to the solution via:
+### Step 1 — Build the solution
 
-```http
-POST http://localhost:8000/api/v1/solutions/chatbot/chat
-Authorization: Bearer <access_token>
+Create a service (FastAPI, Express, any HTTP framework) with these two endpoints:
 
-{ "message": "Hello, what can you do?" }
+```python
+# FastAPI example — the minimum required contract
+
+@app.post("/chat")
+async def chat(body: dict, request: Request):
+    message = body["message"]
+    org_id = request.headers.get("x-org-id")       # use for data scoping
+    user_email = request.headers.get("x-user-email") # use for personalization
+    # ... your AI logic here ...
+    return {"reply": "your response"}
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 ```
+
+The gateway calls `POST {base_url}{route_prefix}` with the original request body and the identity headers added. The solution must return `{"reply": "..."}`.
+
+### Step 2 — Connect to the platform Docker network
+
+Add this to your solution's `docker-compose.yml`:
+
+```yaml
+services:
+  chatbot:
+    build: .
+    ports:
+      - "8004:8004"
+    networks:
+      - agentwork-platform
+
+networks:
+  agentwork-platform:
+    external: true   # joins the platform's existing network — do NOT recreate it
+```
+
+The network name `agentwork-platform` must match what the platform creates. Start the solution:
+
+```bash
+docker compose up --build
+```
+
+Verify the solution is reachable on the platform network:
+
+```bash
+docker exec agentwork_gateway curl -s http://chatbot:8004/health
+# → {"status": "ok"}
+```
+
+### Step 3 — Register the solution (admin only)
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/registry/register \
+  -H "Authorization: Bearer <admin_access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name":           "chatbot",
+    "display_name":   "AI Chatbot",
+    "base_url":       "http://chatbot:8004",
+    "route_prefix":   "/chat",
+    "allowed_groups": ["*"],
+    "health_endpoint": "/health"
+  }'
+```
+
+**Field reference:**
+
+| Field           | Required | Description                                                         |
+|-----------------|----------|---------------------------------------------------------------------|
+| `name`          | Yes      | URL slug. Used in `/api/v1/solutions/{name}/chat`. Must be unique. |
+| `display_name`  | Yes      | Human-readable name shown in the dashboard sidebar.                |
+| `base_url`      | Yes      | Docker-internal URL of the solution container.                     |
+| `route_prefix`  | Yes      | Appended to `base_url` to form the chat endpoint.                  |
+| `allowed_groups`| Yes      | `["*"]` = any authenticated user; `["admin"]` = admin only.        |
+| `health_endpoint`| Yes     | Gateway pings this to determine if the solution is active.         |
+
+After registration, the solution appears instantly in the dashboard sidebar for all users with the correct group.
+
+### Step 4 — Use the solution
+
+**Via API:**
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/solutions/chatbot/chat \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What can you help me with?"}'
+# → {"reply": "..."}
+```
+
+**Via dashboard:** Open `http://localhost:3000/dashboard/solutions`, click the solution, type in the chat box.
 
 ### Identity headers (gateway → solution)
 
 On every forwarded request, the gateway injects:
 
-| Header          | Contains                                    |
-|-----------------|---------------------------------------------|
-| `x-user-email`  | Authenticated user's email                  |
-| `x-org-id`      | The user's organization UUID                |
-| `x-user-groups` | Comma-separated list of the user's groups   |
-| `x-request-id`  | Unique request ID for cross-service tracing |
+| Header          | Contains                                    | Example                          |
+|-----------------|---------------------------------------------|----------------------------------|
+| `x-user-email`  | Authenticated user's email                  | `alice@acme.com`                 |
+| `x-org-id`      | The user's organization UUID                | `550e8400-e29b-...`              |
+| `x-user-groups` | Comma-separated list of the user's groups   | `admin,developer`                |
+| `x-request-id`  | Unique request ID for cross-service tracing | `3f2a1b4c-8d2e-...`              |
 
-Scope all data queries to `x-org-id` to maintain tenant isolation.
+**Always scope data to `x-org-id`** — this is the tenant boundary. Two orgs using the same solution must never see each other's data.
+
+### Deregistering a solution
+
+```bash
+# List solutions to find the service_id
+curl -s http://localhost:8000/api/v1/registry/services \
+  -H "Authorization: Bearer <admin_access_token>"
+
+# Remove the solution
+curl -s -X DELETE http://localhost:8000/api/v1/registry/services/<service_id> \
+  -H "Authorization: Bearer <admin_access_token>"
+```
+
+The solution is immediately removed from the dashboard. The solution service itself keeps running — only the registry entry is deleted.
+
+---
+
+## Environment Variables Reference
+
+Each service reads its config from a `.env` file in its folder. These are dev defaults — never use these values in production.
+
+### Gateway (`services/gateway/.env`)
+
+| Variable             | Default                        | Description                                    |
+|----------------------|--------------------------------|------------------------------------------------|
+| `JWT_SECRET_KEY`     | `supersecret`                  | Must match auth-service SECRET_KEY exactly     |
+| `AUTH_SERVICE_URL`   | `http://auth-service:8001`     | Internal Docker URL of auth-service            |
+| `USER_SERVICE_URL`   | `http://user-service:8003`     | Internal Docker URL of user-service            |
+| `REDIS_URL`          | `redis://redis:6379`           | Redis for rate limiting                        |
+| `RATE_LIMIT_MAX`     | `1000`                         | Requests per org per window                    |
+| `RATE_LIMIT_WINDOW`  | `60`                           | Window duration in seconds                     |
+
+### Auth Service (`services/auth-service/.env`)
+
+| Variable                      | Default                                     | Description                              |
+|-------------------------------|---------------------------------------------|------------------------------------------|
+| `SECRET_KEY`                  | `supersecret`                               | JWT signing key — must match gateway     |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `120`                                       | Access token lifetime (2 hours)          |
+| `REFRESH_TOKEN_EXPIRE_DAYS`   | `7`                                         | Refresh token lifetime                   |
+| `POSTGRES_USER`               | `admin`                                     | Database username                        |
+| `POSTGRES_PASSWORD`           | `admin`                                     | Database password                        |
+| `POSTGRES_DB`                 | `agentwork`                                 | Database name                            |
+| `DATABASE_URL`                | `postgresql://admin:admin@postgres:5432/agentwork` | Full DB connection string         |
+
+### User Service (`services/user-service/.env`)
+
+| Variable         | Default                                     | Description                              |
+|------------------|---------------------------------------------|------------------------------------------|
+| `DATABASE_URL`   | `postgresql://admin:admin@postgres:5432/agentwork` | Full DB connection string         |
+| `REDIS_URL`      | `redis://redis:6379`                        | Redis for policy cache                   |
+
+### Frontend (`.env.local`)
+
+| Variable                  | Default                    | Description                                    |
+|---------------------------|----------------------------|------------------------------------------------|
+| `NEXT_PUBLIC_GATEWAY_URL` | `http://localhost:8000`    | Gateway URL used by the browser for API calls  |
+
+> `NEXT_PUBLIC_*` variables are embedded into the browser bundle at build time. Safe for URLs, never for secrets.
 
 ---
 
