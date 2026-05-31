@@ -70,7 +70,7 @@ services/user-service/
     ├── schemas/                Pydantic — request bodies and response shapes
     │   ├── organization.py     OrgResponse (returns org_id)
     │   ├── group.py            GroupCreate, GroupResponse (returns group_id), PolicyAssign
-    │   ├── policy.py           PolicyCreate, StatementCreate,
+    │   ├── policy.py           PolicyCreate, PolicyUpdate, StatementCreate, StatementUpdate,
     │   │                       PolicyResponse (returns policy_id),
     │   │                       StatementResponse (returns statement_id)
     │   ├── user.py             UserResponse (returns user_id), GroupAssign, UserPoliciesResponse
@@ -80,7 +80,8 @@ services/user-service/
         ├── org_service.py      get_org
         ├── group_service.py    create_group, list_groups, assign_policy, remove_policy,
         │                       add_user_to_group, remove_user_from_group
-        ├── policy_service.py   create_policy, list_policies, add_statement, remove_statement
+        ├── policy_service.py   create_policy, update_policy, list_policies,
+        │                       add_statement, update_statement, remove_statement
         ├── user_service.py     get_user, list_users, get_user_groups, get_user_policies
         └── invite_service.py   create_invite
 ```
@@ -145,7 +146,9 @@ All routes require `Authorization: Bearer <access_token>` header (validated by g
 |--------|-------|--------------|
 | POST | `/api/v1/policies` | admin only |
 | GET | `/api/v1/policies` | any authenticated user |
+| PUT | `/api/v1/policies/{id}` | admin only |
 | POST | `/api/v1/policies/{id}/statements` | admin only |
+| PUT | `/api/v1/policies/{id}/statements/{statement_id}` | admin only |
 | DELETE | `/api/v1/policies/{id}/statements/{statement_id}` | admin only |
 
 ### Users
@@ -242,3 +245,33 @@ The `request_id` from the gateway's `x-request-id` header is read and logged, en
 # Find all logs for one request across services:
 docker compose logs | Select-String "<request_id>"
 ```
+
+---
+
+## feature/policy-management — What Changed
+
+### Policy Rename
+
+`PUT /api/v1/policies/{policy_id}` — renames an existing policy.
+
+- Body: `{ "name": "new-name" }`
+- Returns: full `PolicyResponse` with updated name and existing statements
+- 409 if the new name already exists in this org
+- 404 if the policy does not exist or belongs to a different org
+
+### Statement Edit In-Place
+
+`PUT /api/v1/policies/{policy_id}/statements/{statement_id}` — updates all three fields of a statement without deleting and re-creating it.
+
+- Body: `{ "resource": "platform:users", "action": "read", "effect": "allow" }`
+- Returns: updated `StatementResponse`
+- `statement_id` is preserved — existing group-policy assignments are not affected
+- 404 if either the policy or the statement is not found under this org
+
+### Frontend Changes
+
+Policies page now supports inline editing:
+
+- **Rename policy** — "Rename" button on each card header → inline input + Save/Cancel; Enter key saves, Escape cancels
+- **Edit statement** — "Edit" button on each statement row → row switches to inputs + dropdowns; Save/Cancel inline
+- State updates locally after save — no full page reload needed

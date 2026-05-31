@@ -193,6 +193,13 @@ export const api = {
     });
   },
 
+  updatePolicy(policyId: string, name: string): Promise<Response> {
+    return apiFetch(`/api/v1/policies/${policyId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  },
+
   addStatement(
     policyId: string,
     resource: string,
@@ -201,6 +208,19 @@ export const api = {
   ): Promise<Response> {
     return apiFetch(`/api/v1/policies/${policyId}/statements`, {
       method: 'POST',
+      body: JSON.stringify({ resource, action, effect }),
+    });
+  },
+
+  updateStatement(
+    policyId: string,
+    statementId: string,
+    resource: string,
+    action: string,
+    effect: string
+  ): Promise<Response> {
+    return apiFetch(`/api/v1/policies/${policyId}/statements/${statementId}`, {
+      method: 'PUT',
       body: JSON.stringify({ resource, action, effect }),
     });
   },
