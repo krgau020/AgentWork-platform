@@ -1,0 +1,22 @@
+# Web framework and ASGI server
+fastapi
+uvicorn
+
+# Database ORM and PostgreSQL driver
+sqlalchemy
+psycopg2-binary
+
+# Password hashing — Argon2 primary, bcrypt fallback
+passlib[argon2]
+
+# JWT creation and validation
+python-jose
+
+# Load environment variables from .env file in local/dev environments
+python-dotenv
+
+# Email format validation for Pydantic EmailStr fields
+email-validator
+
+# Database migration versioning
+alembic

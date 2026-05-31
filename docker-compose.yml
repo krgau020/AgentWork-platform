@@ -1,8 +1,217 @@
-version: '3.8'
+version: "3.9"
+
+# AgentWork Platform — Docker Compose
+#
+# Services:
+#   postgres      — Shared PostgreSQL 15 database (port 5432)
+#   redis         — Redis 7 cache / session store (port 6379)
+#   gateway       — API gateway, entry point for all client traffic (port 8000)
+#   auth-service  — Handles signup, login, refresh, logout, JWT issuance (port 8001)
+#   user-service  — Manages orgs, groups, policies, user assignments (port 8003)
+#   frontend      — Next.js admin UI (port 3000) — opt-in via --profile frontend
+#
+# Network:
+#   All services share the "agentwork-platform" bridge network so they can
+#   reach each other by container name (e.g. http://auth-service:8001).
+#
+# Hot-reload:
+#   Service source folders are volume-mounted into /app so code changes are
+#   picked up without rebuilding the image (uvicorn --reload handles Python).
+#
+# Commands:
+#   Start all (except frontend):  docker compose up --build
+#   Start with frontend:          docker compose --profile frontend up --build
+#   Rebuild one service:          docker compose up --build auth-service
+#   View logs:                    docker compose logs -f auth-service
+#   Reset DB (wipe all data):     docker compose down -v && docker compose up --build
 
 services:
-  # Services will be defined here
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PostgreSQL 15 — platform database
+  #
+  # The init.sql script in infra/postgres/ is mounted into the Docker
+  # entrypoint initdb directory. PostgreSQL runs it automatically on
+  # FIRST container start (when pgdata volume is empty). It creates all
+  # 9 tables: organizations, users, tokens, groups, policies,
+  # policy_statements, group_policies, user_groups, service_registry.
+  #
+  # To re-run init.sql (e.g. after a schema change):
+  #   docker compose down -v    ← removes pgdata volume
+  #   docker compose up --build ← fresh start, init.sql runs again
+  # ─────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15
+    container_name: agentwork_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: agentwork
+      TZ: Asia/Kolkata
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - agentwork-platform
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Redis 7 — cache and session store
+  #
+  # Used in future phases for:
+  #   - Caching gateway authorization decisions (avoid DB on every request)
+  #   - Rate limiting counters
+  #   - Session storage if stateful sessions are added
+  # ─────────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7
+    container_name: agentwork_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - agentwork-platform
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # API Gateway — single entry point for all external traffic
+  #
+  # Responsibilities:
+  #   - Validate JWT access tokens on every incoming request
+  #   - Route requests to the correct downstream service
+  #   - Handle CORS for the frontend
+  #   - Add tracing headers (x-request-id, x-user-email, x-org-id, x-user-groups)
+  #
+  # The gateway reads AUTH_SERVICE_URL and USER_SERVICE_URL to know where
+  # to forward requests. Both values use Docker service names as hostnames.
+  # ─────────────────────────────────────────────────────────────────────────
+  gateway:
+    build: ./services/gateway
+    container_name: agentwork_gateway
+    environment:
+      - SECRET_KEY=supersecret
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=agentwork
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      - AUTH_SERVICE_URL=http://auth-service:8001
+      - USER_SERVICE_URL=http://user-service:8003
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+    volumes:
+      - ./services/gateway:/app
+    networks:
+      - agentwork-platform
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Auth Service — authentication and JWT issuance (port 8001)
+  #
+  # Endpoints:
+  #   POST /api/v1/auth/signup   — create user + org + admin group
+  #   POST /api/v1/auth/login    — verify credentials, return token pair
+  #   POST /api/v1/auth/refresh  — rotate refresh token
+  #   POST /api/v1/auth/logout   — revoke refresh token
+  #   GET  /health               — health check
+  #
+  # Healthcheck:
+  #   Docker polls GET /health every 30 seconds using Python (curl/wget are
+  #   not available in python:3.11-slim). The service is marked "healthy"
+  #   after the first successful response and "unhealthy" after 3 failures.
+  #   start_period gives the service 15 seconds to start before health
+  #   failures are counted (accounts for DB wait_for_db retries at startup).
+  # ─────────────────────────────────────────────────────────────────────────
+  auth-service:
+    build: ./services/auth-service
+    container_name: agentwork_auth_service
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=agentwork
+      - SECRET_KEY=supersecret
+      - ACCESS_TOKEN_EXPIRE_MINUTES=120
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+    volumes:
+      - ./services/auth-service:/app
+    networks:
+      - agentwork-platform
+
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # User Service — organization and access control management (port 8003)
+  #
+  # Responsibilities (future phases):
+  #   - CRUD for organizations, groups, policies
+  #   - Assigning users to groups
+  #   - Managing policy statements (resource + action + allow/deny)
+  # ─────────────────────────────────────────────────────────────────────────
+  user-service:
+    build: ./services/user-service
+    container_name: agentwork_user_service
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=agentwork
+      - REDIS_URL=redis://redis:6379
+    ports:
+      - "8003:8003"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./services/user-service:/app
+    networks:
+      - agentwork-platform
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Frontend — Next.js admin UI (port 3000) — OPTIONAL
+  #
+  # Not started by default. Run with:
+  #   docker compose --profile frontend up --build
+  #
+  # The frontend communicates with the platform exclusively through the
+  # gateway (NEXT_PUBLIC_GATEWAY_URL). It does not call auth-service or
+  # user-service directly.
+  #
+  # node_modules and .next are excluded from the volume mount so they are
+  # not overwritten by the host filesystem.
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    container_name: agentwork_frontend
+    profiles: [frontend]
+    environment:
+      - NEXT_PUBLIC_GATEWAY_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - gateway
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - agentwork-platform
+
+volumes:
+  pgdata:  # Named volume — PostgreSQL data persists across container restarts
 
 networks:
-  finsight-network:
-    driver: bridge
+  agentwork-platform:
+    driver: bridge  # Default bridge network; services reach each other by container name

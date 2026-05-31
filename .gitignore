@@ -11,6 +11,7 @@ __pycache__/
 *$py.class
 venv/
 env/
+finsightvenv/
 
 # IDE
 .vscode/
@@ -32,3 +33,6 @@ build/
 
 # Project specific
 architecture_steps_info/
+
+# Claude Code local data
+.claude/
