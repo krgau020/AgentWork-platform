@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 
 const navItems = [
   { label: 'Overview', href: '/dashboard' },
+  { label: 'Solutions', href: '/dashboard/solutions' },
   { label: 'Users', href: '/dashboard/users' },
   { label: 'Groups', href: '/dashboard/groups' },
   { label: 'Policies', href: '/dashboard/policies' },

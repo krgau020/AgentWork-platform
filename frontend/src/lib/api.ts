@@ -42,6 +42,18 @@ export interface PaginatedResponse<T> {
   pages: number;
 }
 
+export interface ServiceResponse {
+  service_id: string;
+  name: string;
+  display_name: string;
+  base_url: string;
+  route_prefix: string;
+  allowed_groups: string[];
+  health_endpoint: string;
+  is_active: boolean;
+  registered_at: string | null;
+}
+
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const isRefreshCall = path.includes('/auth/refresh');
 
@@ -236,6 +248,19 @@ export const api = {
     return apiFetch(`/api/v1/orgs/${orgId}/invites`, {
       method: 'POST',
       body: JSON.stringify({ email, group_id: groupId }),
+    });
+  },
+
+  // Solutions
+  async listSolutions(): Promise<ServiceResponse[]> {
+    const res = await apiFetch('/api/v1/solutions');
+    return res.json();
+  },
+
+  chatWithSolution(serviceName: string, message: string): Promise<Response> {
+    return apiFetch(`/api/v1/solutions/${serviceName}/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
     });
   },
 };
