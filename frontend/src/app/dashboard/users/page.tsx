@@ -94,8 +94,8 @@ export default function UsersPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-slate-900">Users</h1>
-      <p className="text-slate-500 text-sm mt-1">Manage users in your organization</p>
+      <h1 className="text-2xl font-bold text-zinc-900">Users</h1>
+      <p className="text-zinc-500 text-sm mt-1">Manage users in your organization</p>
 
       {error && (
         <div className="mt-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-2.5">
@@ -103,29 +103,29 @@ export default function UsersPage() {
         </div>
       )}
 
-      <div className="mt-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="mt-6 bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-6 py-3 text-left">
+            <tr className="bg-zinc-50 border-b border-zinc-200">
+              <th className="text-xs font-semibold text-zinc-500 uppercase tracking-wide px-6 py-3 text-left">
                 Email
               </th>
-              <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-6 py-3 text-left">
+              <th className="text-xs font-semibold text-zinc-500 uppercase tracking-wide px-6 py-3 text-left">
                 Status
               </th>
               {admin && (
-                <th className="text-xs font-semibold text-slate-500 uppercase tracking-wide px-6 py-3 text-left">
+                <th className="text-xs font-semibold text-zinc-500 uppercase tracking-wide px-6 py-3 text-left">
                   Actions
                 </th>
               )}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-zinc-100">
             {loading ? (
               <tr>
                 <td colSpan={admin ? 3 : 2} className="px-6 py-8 text-center">
                   <div className="flex justify-center">
-                    <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <div className="h-5 w-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
                   </div>
                 </td>
               </tr>
@@ -133,22 +133,22 @@ export default function UsersPage() {
               <tr>
                 <td
                   colSpan={admin ? 3 : 2}
-                  className="px-6 py-8 text-center text-sm text-slate-500"
+                  className="px-6 py-8 text-center text-sm text-zinc-500"
                 >
                   No users found
                 </td>
               </tr>
             ) : (
               users.map((user) => (
-                <tr key={user.user_id} className="hover:bg-slate-50">
-                  <td className="px-6 py-4 text-sm text-slate-900">{user.email}</td>
+                <tr key={user.user_id} className="hover:bg-zinc-50">
+                  <td className="px-6 py-4 text-sm text-zinc-900">{user.email}</td>
                   <td className="px-6 py-4 text-sm">
                     {user.is_active ? (
                       <span className="bg-green-50 text-green-700 text-xs font-medium px-2.5 py-0.5 rounded-full">
                         Active
                       </span>
                     ) : (
-                      <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                      <span className="bg-zinc-100 text-zinc-500 text-xs font-medium px-2.5 py-0.5 rounded-full">
                         Inactive
                       </span>
                     )}
@@ -157,7 +157,7 @@ export default function UsersPage() {
                     <td className="px-6 py-4 text-sm">
                       <button
                         onClick={() => openGroupsModal(user)}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                        className="text-green-600 hover:text-green-800 font-medium text-sm"
                       >
                         Manage groups
                       </button>
@@ -176,17 +176,17 @@ export default function UsersPage() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors"
+            className="bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-black font-medium rounded-lg px-4 py-2 text-sm transition-colors"
           >
             Previous
           </button>
-          <span className="text-sm text-slate-500">
+          <span className="text-sm text-zinc-500">
             Page {page} of {totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors"
+            className="bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-black font-medium rounded-lg px-4 py-2 text-sm transition-colors"
           >
             Next
           </button>
@@ -201,7 +201,7 @@ export default function UsersPage() {
       >
         {modalLoading ? (
           <div className="flex justify-center py-8">
-            <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <div className="h-5 w-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <div className="space-y-6">
@@ -213,17 +213,17 @@ export default function UsersPage() {
 
             {/* Current groups */}
             <div>
-              <h3 className="text-sm font-semibold text-slate-700 mb-3">Current groups</h3>
+              <h3 className="text-sm font-semibold text-zinc-700 mb-3">Current groups</h3>
               {userGroups.length === 0 ? (
-                <p className="text-sm text-slate-400">Not in any groups</p>
+                <p className="text-sm text-zinc-400">Not in any groups</p>
               ) : (
                 <ul className="space-y-2">
                   {userGroups.map((g) => (
                     <li
                       key={g.group_id}
-                      className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg"
+                      className="flex items-center justify-between py-2 px-3 bg-zinc-50 rounded-lg"
                     >
-                      <span className="text-sm text-slate-900">{g.name}</span>
+                      <span className="text-sm text-zinc-900">{g.name}</span>
                       <button
                         onClick={() => handleRemoveGroup(g.group_id)}
                         className="text-red-500 hover:text-red-700 text-sm font-medium"
@@ -239,12 +239,12 @@ export default function UsersPage() {
             {/* Add to group */}
             {availableGroups.length > 0 && (
               <div>
-                <h3 className="text-sm font-semibold text-slate-700 mb-3">Add to group</h3>
+                <h3 className="text-sm font-semibold text-zinc-700 mb-3">Add to group</h3>
                 <div className="flex gap-2">
                   <select
                     value={selectedGroupId}
                     onChange={(e) => setSelectedGroupId(e.target.value)}
-                    className="flex-1 px-3 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    className="flex-1 px-3 py-2.5 rounded-lg border border-zinc-300 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                   >
                     <option value="">Select a group</option>
                     {availableGroups.map((g) => (
@@ -256,7 +256,7 @@ export default function UsersPage() {
                   <button
                     onClick={handleAddGroup}
                     disabled={!selectedGroupId}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg px-4 py-2 text-sm transition-colors"
+                    className="bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-black font-medium rounded-lg px-4 py-2 text-sm transition-colors"
                   >
                     Add
                   </button>

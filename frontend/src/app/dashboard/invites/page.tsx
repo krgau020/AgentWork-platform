@@ -94,9 +94,9 @@ export default function InvitesPage() {
   if (!admin) {
     return (
       <div className="p-8">
-        <h1 className="text-2xl font-bold text-slate-900">Invites</h1>
-        <div className="mt-6 bg-white rounded-xl border border-slate-200 shadow-sm px-6 py-10 text-center">
-          <p className="text-slate-500 text-sm">
+        <h1 className="text-2xl font-bold text-zinc-900">Invites</h1>
+        <div className="mt-6 bg-white rounded-xl border border-zinc-200 shadow-sm px-6 py-10 text-center">
+          <p className="text-zinc-500 text-sm">
             Only admins can create invitations.
           </p>
         </div>
@@ -110,19 +110,19 @@ export default function InvitesPage() {
 
   return (
     <div className="p-8">
-      <h1 className="text-2xl font-bold text-slate-900">Invites</h1>
-      <p className="text-slate-500 text-sm mt-1">
+      <h1 className="text-2xl font-bold text-zinc-900">Invites</h1>
+      <p className="text-zinc-500 text-sm mt-1">
         Invite new members to your organization
       </p>
 
       {/* Invite form */}
-      <div className="mt-6 bg-white rounded-xl border border-slate-200 shadow-sm p-6">
-        <h2 className="text-sm font-semibold text-slate-900 mb-4">Create invitation</h2>
+      <div className="mt-6 bg-white rounded-xl border border-zinc-200 shadow-sm p-6">
+        <h2 className="text-sm font-semibold text-zinc-900 mb-4">Create invitation</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label
               htmlFor="invite_email"
-              className="block text-sm font-medium text-slate-700 mb-1.5"
+              className="block text-sm font-medium text-zinc-700 mb-1.5"
             >
               Email address
             </label>
@@ -133,26 +133,26 @@ export default function InvitesPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="invite@company.com"
-              className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+              className="w-full px-3 py-2.5 rounded-lg border border-zinc-300 text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
             />
           </div>
 
           <div>
             <label
               htmlFor="invite_group"
-              className="block text-sm font-medium text-slate-700 mb-1.5"
+              className="block text-sm font-medium text-zinc-700 mb-1.5"
             >
               Assign to group
             </label>
             {groupsLoading ? (
-              <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
+              <div className="h-10 bg-zinc-100 rounded-lg animate-pulse" />
             ) : (
               <select
                 id="invite_group"
                 required
                 value={groupId}
                 onChange={(e) => setGroupId(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-300 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                className="w-full px-3 py-2.5 rounded-lg border border-zinc-300 text-zinc-900 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
               >
                 <option value="">Select a group</option>
                 {groups.map((g) => (
@@ -173,7 +173,7 @@ export default function InvitesPage() {
           <button
             type="submit"
             disabled={loading || groupsLoading}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium rounded-lg px-5 py-2.5 text-sm transition-colors"
+            className="bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-black font-medium rounded-lg px-5 py-2.5 text-sm transition-colors"
           >
             {loading ? 'Sending invite...' : 'Create invite'}
           </button>
@@ -182,28 +182,28 @@ export default function InvitesPage() {
 
       {/* Result */}
       {result && (
-        <div className="mt-6 bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+        <div className="mt-6 bg-white rounded-xl border border-zinc-200 shadow-sm p-6 space-y-5">
           <div>
-            <p className="text-sm font-semibold text-slate-900 mb-1">
-              Invitation created for <span className="text-blue-600">{result.email}</span>
+            <p className="text-sm font-semibold text-zinc-900 mb-1">
+              Invitation created for <span className="text-green-600">{result.email}</span>
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-zinc-400">
               Expires: {new Date(result.expires_at).toLocaleString()}
             </p>
           </div>
 
           {/* Token */}
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">
               Invite token
             </p>
             <div className="flex items-start gap-3">
-              <code className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm font-mono text-slate-800 break-all">
+              <code className="flex-1 bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-3 text-sm font-mono text-zinc-800 break-all">
                 {result.invite_token}
               </code>
               <button
                 onClick={handleCopyToken}
-                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-colors"
+                className="shrink-0 bg-green-500 hover:bg-green-600 text-black font-medium rounded-lg px-4 py-2.5 text-sm transition-colors"
               >
                 {copied ? 'Copied!' : 'Copy'}
               </button>
@@ -212,16 +212,16 @@ export default function InvitesPage() {
 
           {/* Invite link */}
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">
               Invite link
             </p>
             <div className="flex items-start gap-3">
-              <code className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-sm font-mono text-slate-800 break-all">
+              <code className="flex-1 bg-zinc-50 border border-zinc-200 rounded-lg px-4 py-3 text-sm font-mono text-zinc-800 break-all">
                 {inviteLink}
               </code>
               <button
                 onClick={handleCopyLink}
-                className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg px-4 py-2.5 text-sm transition-colors"
+                className="shrink-0 bg-green-500 hover:bg-green-600 text-black font-medium rounded-lg px-4 py-2.5 text-sm transition-colors"
               >
                 Copy link
               </button>

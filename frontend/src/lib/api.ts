@@ -42,6 +42,11 @@ export interface PaginatedResponse<T> {
   pages: number;
 }
 
+export interface OrgResponse {
+  org_id: string;
+  name: string;
+}
+
 export interface ServiceResponse {
   service_id: string;
   name: string;
@@ -241,6 +246,12 @@ export const api = {
     return apiFetch(`/api/v1/policies/${policyId}/statements/${statementId}`, {
       method: 'DELETE',
     });
+  },
+
+  // Orgs
+  async getOrg(orgId: string): Promise<OrgResponse> {
+    const res = await apiFetch(`/api/v1/orgs/${orgId}`);
+    return res.json();
   },
 
   // Invites
