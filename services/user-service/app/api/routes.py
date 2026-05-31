@@ -34,6 +34,13 @@ Policy update flow (feature/policy-management):
   PUT /api/v1/policies/{id}/statements/{sid}       — edit a statement in place
   Both are admin-only and org-scoped. statement_id is preserved on update so
   existing group assignments that reference the statement are not disrupted.
+
+Service registry (feature/service-registry):
+  POST   /api/v1/registry/register             — admin registers a solution
+  GET    /api/v1/registry/services             — list active solutions (any auth user)
+  DELETE /api/v1/registry/services/{id}        — admin removes a solution
+  GET    /internal/registry/{name}             — gateway-only lookup: name → base_url + route_prefix
+                                                 No JWT required; reachable only on internal Docker network.
 """
 
 from uuid import UUID
@@ -47,7 +54,9 @@ from app.schemas.group import GroupCreate, GroupResponse, PolicyAssign
 from app.schemas.invite import InviteCreate, InviteResponse
 from app.schemas.policy import PolicyCreate, PolicyUpdate, PolicyResponse, StatementCreate, StatementUpdate, StatementResponse
 from app.schemas.user import UserResponse, GroupAssign, UserPoliciesResponse
-from app.services import org_service, group_service, invite_service, policy_service, user_service
+from app.schemas.registry import ServiceRegisterRequest, ServiceResponse
+from app.services import org_service, group_service, invite_service, policy_service, user_service, registry_service
+from app.models.service_registry import ServiceRegistry
 
 router = APIRouter()
 
@@ -297,3 +306,61 @@ async def get_user_policies(
     policies = user_service.get_user_policies(db, user_id, org_id)
     await set_policy_cache(str(user_id), policies)
     return {"user_id": str(user_id), "policies": policies, "from_cache": False}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Service Registry
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/api/v1/registry/register", response_model=ServiceResponse)
+def register_service(
+    body: ServiceRegisterRequest,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    return registry_service.register_service(
+        db, body.name, body.display_name, body.base_url,
+        body.route_prefix, body.allowed_groups, body.health_endpoint,
+    )
+
+
+@router.get("/api/v1/registry/services")
+def list_services(
+    db: Session = Depends(get_db),
+    org_id: UUID = Depends(get_org_id),
+):
+    services = registry_service.list_services(db)
+    return [ServiceResponse.model_validate(s).model_dump() for s in services]
+
+
+@router.delete("/api/v1/registry/services/{service_id}")
+def deregister_service(
+    service_id: UUID,
+    db: Session = Depends(get_db),
+    _: str = Depends(require_admin),
+):
+    registry_service.deregister_service(db, service_id)
+    return {"message": "Service deregistered"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal Registry Lookup — gateway only, no JWT required
+#
+# The gateway calls this directly on the internal Docker network to resolve
+# a service name → base_url + route_prefix before forwarding chat requests.
+# Not exposed through the gateway's public routing — only reachable on :8003.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/internal/registry/{name}")
+def get_service_internal(name: str, db: Session = Depends(get_db)):
+    service = (
+        db.query(ServiceRegistry)
+        .filter(ServiceRegistry.name == name, ServiceRegistry.is_active == True)
+        .first()
+    )
+    if not service:
+        raise HTTPException(
+            status_code=404,
+            detail={"error_code": "NOT_FOUND", "message": f"Service '{name}' not found"},
+        )
+    return {"base_url": service.base_url, "route_prefix": service.route_prefix}

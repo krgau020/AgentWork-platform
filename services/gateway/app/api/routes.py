@@ -22,10 +22,22 @@ Route categories:
     generic /api/v1/auth/{path:path} catch-all (if one existed) so it matches first.
 
     Protected routes — JWT required + rate limited, forwarded to user-service:
-        /api/v1/orgs/*     → user-service (after token validation + rate check + headers)
-        /api/v1/users/*    → user-service
-        /api/v1/groups/*   → user-service
-        /api/v1/policies/* → user-service
+        /api/v1/orgs/*      → user-service (after token validation + rate check + headers)
+        /api/v1/users/*     → user-service
+        /api/v1/groups/*    → user-service
+        /api/v1/policies/*  → user-service
+        /api/v1/registry/*  → user-service (service registry CRUD)
+
+    Solution routing — JWT required, dynamic forwarding to registered solutions:
+        GET  /api/v1/solutions              → user-service /api/v1/registry/services
+        POST /api/v1/solutions/{name}/chat  → gateway looks up name in internal registry
+                                              → forwards body to {base_url}{route_prefix}
+
+    Dynamic solution routing:
+        Gateway calls GET /internal/registry/{name} on user-service (Docker internal network,
+        no JWT) to resolve service_name → base_url + route_prefix, then forwards the chat
+        request body to the solution's /chat endpoint. The solution never sees the JWT —
+        it receives the forwarded body only.
 
 Helper functions:
     _error()            — builds standard error JSON with error_code, message,
@@ -227,3 +239,37 @@ async def policies(request: Request, payload: dict = Depends(rate_limit)):
 @router.api_route("/api/v1/policies/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def policies_detail(path: str, request: Request, payload: dict = Depends(rate_limit)):
     return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
+
+
+# ── Service Registry ─────────────────────────────────────────────────────────
+
+@router.api_route("/api/v1/registry/{path:path}", methods=["GET", "POST", "DELETE"])
+async def registry(path: str, request: Request, payload: dict = Depends(rate_limit)):
+    return await _forward(request, settings.USER_SERVICE_URL + request.url.path, _identity_headers(payload, request))
+
+
+# ── Solutions ─────────────────────────────────────────────────────────────────
+#
+# GET  /api/v1/solutions              → list registered solutions from registry
+# POST /api/v1/solutions/{name}/chat  → resolve service name → forward to solution
+
+@router.api_route("/api/v1/solutions", methods=["GET"])
+async def list_solutions(request: Request, payload: dict = Depends(rate_limit)):
+    return await _forward(
+        request,
+        settings.USER_SERVICE_URL + "/api/v1/registry/services",
+        _identity_headers(payload, request),
+    )
+
+
+@router.post("/api/v1/solutions/{service_name}/chat")
+async def solution_chat(service_name: str, request: Request, payload: dict = Depends(rate_limit)):
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        lookup = await client.get(f"{settings.USER_SERVICE_URL}/internal/registry/{service_name}")
+
+    if lookup.status_code != 200:
+        return _error(404, "NOT_FOUND", f"Solution '{service_name}' is not registered or inactive", request)
+
+    data = lookup.json()
+    target_url = f"{data['base_url']}{data['route_prefix']}"
+    return await _forward(request, target_url, _identity_headers(payload, request))
