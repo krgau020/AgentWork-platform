@@ -28,6 +28,12 @@ Invite flow (Phase 3):
   The invitee submits the token to auth-service POST /api/v1/auth/accept-invite.
   This route uses header_org_id (from x-org-id, set by gateway from JWT) as the
   authoritative org scope — the path org_id is structural only.
+
+Policy update flow (feature/policy-management):
+  PUT /api/v1/policies/{id}                        — rename a policy
+  PUT /api/v1/policies/{id}/statements/{sid}       — edit a statement in place
+  Both are admin-only and org-scoped. statement_id is preserved on update so
+  existing group assignments that reference the statement are not disrupted.
 """
 
 from uuid import UUID
@@ -39,7 +45,7 @@ from app.db.session import get_db
 from app.schemas.organization import OrgResponse
 from app.schemas.group import GroupCreate, GroupResponse, PolicyAssign
 from app.schemas.invite import InviteCreate, InviteResponse
-from app.schemas.policy import PolicyCreate, PolicyResponse, StatementCreate, StatementResponse
+from app.schemas.policy import PolicyCreate, PolicyUpdate, PolicyResponse, StatementCreate, StatementUpdate, StatementResponse
 from app.schemas.user import UserResponse, GroupAssign, UserPoliciesResponse
 from app.services import org_service, group_service, invite_service, policy_service, user_service
 
@@ -172,6 +178,17 @@ def list_policies(
     return result
 
 
+@router.put("/api/v1/policies/{policy_id}", response_model=PolicyResponse)
+def update_policy(
+    policy_id: UUID,
+    body: PolicyUpdate,
+    db: Session = Depends(get_db),
+    org_id: UUID = Depends(get_org_id),
+    _: str = Depends(require_admin),
+):
+    return policy_service.update_policy(db, policy_id, body.name, org_id)
+
+
 @router.post("/api/v1/policies/{policy_id}/statements", response_model=StatementResponse)
 def add_statement(
     policy_id: UUID,
@@ -181,6 +198,18 @@ def add_statement(
     _: str = Depends(require_admin),
 ):
     return policy_service.add_statement(db, policy_id, body.resource, body.action, body.effect, org_id)
+
+
+@router.put("/api/v1/policies/{policy_id}/statements/{statement_id}", response_model=StatementResponse)
+def update_statement(
+    policy_id: UUID,
+    statement_id: UUID,
+    body: StatementUpdate,
+    db: Session = Depends(get_db),
+    org_id: UUID = Depends(get_org_id),
+    _: str = Depends(require_admin),
+):
+    return policy_service.update_statement(db, policy_id, statement_id, body.resource, body.action, body.effect, org_id)
 
 
 @router.delete("/api/v1/policies/{policy_id}/statements/{statement_id}")

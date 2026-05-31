@@ -128,7 +128,7 @@ The frontend is a Next.js 14 (App Router) admin dashboard. All API calls go dire
 | `/dashboard` | Any authenticated user | Stats overview — user/group/policy counts, session info |
 | `/dashboard/users` | Any authenticated user | List org users; admin can manage group memberships |
 | `/dashboard/groups` | Any authenticated user | List groups; admin can create groups + assign policies |
-| `/dashboard/policies` | Any authenticated user | List policies + statements; admin can create + modify |
+| `/dashboard/policies` | Any authenticated user | List policies + statements; admin can create, rename (inline), add/edit/remove statements (inline) |
 | `/dashboard/invites` | Admin only | Create invite tokens for new org members |
 
 **Auth behavior:**
@@ -226,12 +226,14 @@ The gateway validates the JWT, then injects identity headers before forwarding. 
 
 #### Policies
 
-| Method | Route                                           | Who   | Description                |
-|--------|-------------------------------------------------|-------|----------------------------|
-| POST   | `/api/v1/policies`                              | admin | Create policy              |
-| GET    | `/api/v1/policies`                              | any   | List policies (paginated)  |
-| POST   | `/api/v1/policies/{policy_id}/statements`       | admin | Add permission statement   |
-| DELETE | `/api/v1/policies/{policy_id}/statements/{sid}` | admin | Remove statement           |
+| Method | Route                                           | Who   | Description                      |
+|--------|-------------------------------------------------|-------|----------------------------------|
+| POST   | `/api/v1/policies`                              | admin | Create policy                    |
+| GET    | `/api/v1/policies`                              | any   | List policies (paginated)        |
+| PUT    | `/api/v1/policies/{policy_id}`                  | admin | Rename policy                    |
+| POST   | `/api/v1/policies/{policy_id}/statements`       | admin | Add permission statement         |
+| PUT    | `/api/v1/policies/{policy_id}/statements/{sid}` | admin | Edit statement in place          |
+| DELETE | `/api/v1/policies/{policy_id}/statements/{sid}` | admin | Remove statement                 |
 
 #### Users
 
