@@ -55,12 +55,18 @@ At login, the auth service resolves the user's groups and embeds them in the JWT
 
 ## Services
 
-| Service      | Port | Container                | Responsibility                                         | Status       |
-|--------------|------|--------------------------|--------------------------------------------------------|--------------|
-| Frontend     | 3000 | `agentwork_frontend`     | Next.js admin UI — login, dashboard, PBAC management  | **Complete** |
-| API Gateway  | 8000 | `agentwork_gateway`      | JWT validation, routing, rate limiting, tracing        | **Complete** |
-| Auth Service | 8001 | `agentwork_auth_service` | Signup, login, refresh, logout, accept-invite, Alembic | **Complete** |
-| User Service | 8003 | `agentwork_user_service` | Orgs, groups, policies, user management, invites       | **Complete** |
+| Service      | Port | Container                | Responsibility                                                  | Status       |
+|--------------|----|---------------------------|-----------------------------------------------------------------|--------------|
+| Frontend     | 3000 | `agentwork_frontend`   | Next.js admin UI — login, dashboard, PBAC management           | **Complete** |
+| API Gateway  | 8000 | `agentwork_gateway`    | JWT validation, routing, rate limiting, tracing, solution proxy | **Complete** |
+| Auth Service | 8001 | `agentwork_auth_service` | Signup, login, refresh, logout, accept-invite, Alembic       | **Complete** |
+| User Service | 8003 | `agentwork_user_service` | Orgs, groups, policies, users, invites, service registry     | **Complete** |
+
+### Solutions (separate repos, external services)
+
+| Solution  | Port | Location                                            | Responsibility                     | Status       |
+|-----------|------|-----------------------------------------------------|------------------------------------|--------------|
+| Chatbot   | 8004 | `C:\Users\admin\Desktop\AgentWork-Solution\chatbot` | LLM chat via Gemini 1.5 Flash      | **Complete** |
 
 ## Infrastructure
 
@@ -246,6 +252,52 @@ The gateway validates the JWT, then injects identity headers before forwarding. 
 | GET    | `/api/v1/users/{user_id}/groups`          | any   | List groups for a user              |
 | GET    | `/api/v1/users/{user_id}/policies`        | any   | Resolve full effective permissions  |
 
+#### Service Registry
+
+Admin manages the catalog of plugged-in AI solutions. Solutions are platform-level — not org-scoped. Access to each solution is controlled by its `allowed_groups` field.
+
+| Method | Route                                    | Who   | Description                              |
+|--------|------------------------------------------|-------|------------------------------------------|
+| POST   | `/api/v1/registry/register`             | admin | Register a new solution                  |
+| GET    | `/api/v1/registry/services`             | any   | List all active registered solutions     |
+| DELETE | `/api/v1/registry/services/{id}`        | admin | Permanently remove a solution            |
+
+**Register body:**
+```json
+{
+  "name":           "chatbot",
+  "display_name":   "AI Chatbot",
+  "base_url":       "http://chatbot:8004",
+  "route_prefix":   "/chat",
+  "allowed_groups": ["*"],
+  "health_endpoint": "/health"
+}
+```
+
+- `name` — URL slug used in `/api/v1/solutions/{name}/chat`. Must be unique.
+- `base_url` — internal Docker URL of the solution container.
+- `route_prefix` — appended to `base_url` for chat forwarding: `{base_url}{route_prefix}`.
+- `allowed_groups` — `["*"]` means any authenticated user; `["admin"]` restricts to admins.
+
+#### Solutions
+
+| Method | Route                              | Who | Description                                         |
+|--------|------------------------------------|-----|-----------------------------------------------------|
+| GET    | `/api/v1/solutions`                | any | List registered solutions (reads from registry)     |
+| POST   | `/api/v1/solutions/{name}/chat`    | any | Send a chat message to a registered solution        |
+
+**Chat request body:**
+```json
+{ "message": "What is the weather today?" }
+```
+
+**Chat response:**
+```json
+{ "reply": "I don't have real-time data, but I can help with general questions." }
+```
+
+The gateway resolves `{name}` → `base_url + route_prefix` by calling the user-service internal registry endpoint (Docker network only, no JWT), then forwards the request body to the solution.
+
 ---
 
 ## Invite Flow
@@ -392,17 +444,15 @@ On public routes (auth endpoints), `x-user-email`, `x-org-id`, and `x-user-group
 
 ## Implementation Phases
 
-| Phase | Goal                                                                       | Status      |
-|-------|----------------------------------------------------------------------------|-------------|
-| 1     | Core auth — signup, login, refresh, logout, JWT issuance                   | **Done**    |
-| 2     | PBAC — orgs, groups, policies, user-group management, identity headers     | **Done**    |
-| 3     | Invite flow — admin invites members into an org + group                    | **Done**    |
-| 4     | Platform hardening — rate limiting, policy cache, JSON logging, Alembic    | **Done**    |
-| 5     | Service registry — dynamic gateway routing from DB                         | Not started |
-| 6     | Frontend — Next.js admin dashboard                                         | **Done**    |
-| 7     | Solution integration — connect first AI solution, solution launcher UI     | Not started |
-
-> Phase 5 (service registry) and Phase 7 (solution launcher) are the next two milestones. Phase 5 builds the `/registry/register` API and dynamic gateway routing. Phase 7 connects the first AI solution and adds a solution picker to the frontend.
+| Phase | Goal                                                                                          | Status      |
+|-------|-----------------------------------------------------------------------------------------------|-------------|
+| 1     | Core auth — signup, login, refresh, logout, JWT issuance                                      | **Done**    |
+| 2     | PBAC — orgs, groups, policies, user-group management, identity headers                        | **Done**    |
+| 3     | Invite flow — admin invites members into an org + group                                       | **Done**    |
+| 4     | Platform hardening — rate limiting, policy cache, JSON logging, Alembic                       | **Done**    |
+| 5     | Service registry — register/list/remove solutions, dynamic gateway routing from DB            | **Done**    |
+| 6     | Frontend — Next.js admin dashboard                                                            | **Done**    |
+| 7     | Solution integration — Chatbot (Gemini + LangChain), solution launcher UI                    | **Done**    |
 
 ---
 
@@ -419,18 +469,59 @@ Step-by-step build notes in [architecture_steps_info/project-setup/](architectur
 | `5.user-service.md` + `5a` + `5b` | User service reference, testing, concepts |
 | `6.invite-flow.md` + `6a` + `6b` | Invite flow reference, testing, concepts |
 | `7.platform-hardening.md` + `7a` + `7b` | Rate limiting, policy cache, JSON logging, Alembic |
+| `8.solution-launcher-and-dashboard-design.md` | Dashboard UX, solution launcher flow, policy management gaps |
+| `9.service-registry.md` + `9a` + `9b` | Service registry reference, testing, concepts |
 | `PBAC-understanding.md` | Deep dive: PBAC vs RBAC, permission chain, token lifecycle |
 
 ---
 
 ## Adding a Solution Microservice
 
-Solution services run in separate repos. To connect to the platform (Phase 5+):
+Solutions live in separate repos and are registered by an admin — they never register themselves. Think of it like Netflix: you open the platform and see the catalog, then pick a solution.
 
-1. Join the `agentwork-platform` Docker network
-2. Call `POST /registry/register` at startup (Phase 5 API — not yet built)
-3. Expose `GET /health`
-4. Read identity from headers the gateway injects on every request:
+### Developer steps (building the solution)
+
+1. Create a FastAPI (or any HTTP) service with two endpoints:
+   - `POST /chat` — accepts `{ "message": "..." }`, returns `{ "reply": "..." }`
+   - `GET /health` — returns `{ "status": "ok" }`
+2. Add a `docker-compose.yml` that joins the `agentwork-platform` external network:
+   ```yaml
+   networks:
+     agentwork-platform:
+       external: true
+   ```
+3. Start the solution: `docker compose up --build`
+
+### Admin steps (registering the solution in the platform)
+
+Once the solution is running, an admin registers it via the platform API:
+
+```http
+POST http://localhost:8000/api/v1/registry/register
+Authorization: Bearer <admin_access_token>
+
+{
+  "name":           "chatbot",
+  "display_name":   "AI Chatbot",
+  "base_url":       "http://chatbot:8004",
+  "route_prefix":   "/chat",
+  "allowed_groups": ["*"],
+  "health_endpoint": "/health"
+}
+```
+
+After registration, users can send messages to the solution via:
+
+```http
+POST http://localhost:8000/api/v1/solutions/chatbot/chat
+Authorization: Bearer <access_token>
+
+{ "message": "Hello, what can you do?" }
+```
+
+### Identity headers (gateway → solution)
+
+On every forwarded request, the gateway injects:
 
 | Header          | Contains                                    |
 |-----------------|---------------------------------------------|
@@ -439,7 +530,7 @@ Solution services run in separate repos. To connect to the platform (Phase 5+):
 | `x-user-groups` | Comma-separated list of the user's groups   |
 | `x-request-id`  | Unique request ID for cross-service tracing |
 
-5. Scope all data queries to `x-org-id` to maintain tenant isolation
+Scope all data queries to `x-org-id` to maintain tenant isolation.
 
 ---
 
